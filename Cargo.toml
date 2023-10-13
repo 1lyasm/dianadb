@@ -1,0 +1,29 @@
+[package]
+name = "dianadb"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "diserver"
+path = "src/server.rs"
+
+[[bin]]
+name = "diclient"
+path = "src/client.rs"
+
+[profile.release]
+strip = "symbols"
+
+[dependencies]
+log = "0.4.20"
+serde_json = "1.0.107"
+
+[dependencies.serde]
+version = "1.0.188"
+default-features = false
+features = ["std", "derive"]
+
+[dependencies.env_logger]
+version = "0.10.0"
+default-features = false
+features = ["humantime"]
