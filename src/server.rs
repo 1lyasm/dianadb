@@ -37,7 +37,7 @@ struct Config {
 }
 
 impl Config {
-    fn init_pool_id(&mut self, args: &Vec<String>, listener: std::net::TcpListener) {
+    fn init_pool_id(&mut self, args: &Vec<String>, listener: &std::net::TcpListener) {
         let accept_result = listener.accept();
         if accept_result.is_err() {
             panic!("{}: accept failed", function!());
