@@ -3,6 +3,7 @@ use std::io::{Write, Read};
 fn handle_client(stream: &mut std::net::TcpStream) {
     let mut request = String::new();
     stream.read_to_string(&mut request).unwrap();
+    println!("received message: {}", request);
     stream.write_all(request.as_bytes()).unwrap();
 }
 
