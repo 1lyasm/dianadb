@@ -7,11 +7,19 @@ fn handle_client(stream: &mut std::net::TcpStream) {
     stream.write_all(request.as_bytes()).unwrap();
 }
 
-fn main() {
+fn serve_multiple() {
     let listener = std::net::TcpListener::bind("0.0.0.0:6789").unwrap();
     for stream in listener.incoming() {
         handle_client(&mut stream.unwrap());
     }
+}
+
+fn serve() {
+    let listener = std::net::TcpListener::bind("0.0.0.0:6789").unwrap();
+}
+
+fn main() {
     println!("this is server");
+    serve_multiple();
 }
 
