@@ -16,10 +16,12 @@ fn serve_multiple() {
 
 fn serve() {
     let listener = std::net::TcpListener::bind("0.0.0.0:6789").unwrap();
+    let (mut stream, addr) = listener.accept().unwrap();
+    handle_client(&mut stream);
 }
 
 fn main() {
     println!("this is server");
-    serve_multiple();
+    serve();
 }
 
