@@ -58,7 +58,8 @@ impl Config {
         }
     }
 
-    fn merge_by_pools(&self, pool_addresses: &mut std::vec::Vec<String>) {
+    fn merge_by_pools(&self) -> Vec<String> {
+        let mut pool_addresses = Vec::new();
         for _ in 0..self.shard_count {
             pool_addresses.push("".to_owned());
         }
@@ -68,29 +69,23 @@ impl Config {
                 .unwrap()
                 .push_str(&(self.addresses.get(i).unwrap().to_owned()));
         }
+        return pool_addresses;
     }
 
-    fn send(&self) {
-        let mut pool_addresses = std::vec::Vec::new();
-        self.merge_by_pools(&mut pool_addresses);
+    fn send(&self, address: &String, pool: &usize, peers: &String) {
+        let mut stream = std::net::TcpStream::connect(address)
+            .expect(&format!("{}: connect failed", function!()));
+        stream.write_all(format!("{} {}", pool.to_string(), peers).as_bytes())
+            .expect(&format!("{}: write_all failed", function!()));
+    }
+
+    fn send_all(&self) {
+        let pool_addresses = self.merge_by_pools();
         for i in 0..self.addresses.len() {
             let address = self.addresses.get(i).unwrap();
             let pool = self.pools.get(i).unwrap();
-            let connection_result = std::net::TcpStream::connect(address.to_owned());
-            if connection_result.is_err() {
-                panic!("{}: connect failed {}", function!(), address.to_owned());
-            }
-            let mut stream = connection_result.unwrap();
-            let write_result = stream.write(&self.shard_count.to_ne_bytes());
-            if write_result.is_err() {
-                panic!("{}: write failed", function!());
-            }
-            if stream
-                .write_all(pool_addresses.get(*pool).unwrap().as_bytes())
-                .is_err()
-            {
-                panic!("{}: write_all failed", function!());
-            }
+            let peers = pool_addresses.get(*pool).unwrap();
+            self.send(address, pool, &peers);
         }
     }
 
@@ -98,6 +93,7 @@ impl Config {
         self.init_shard_count();
         self.init_addresses();
         self.init_pools();
+        self.send_all();
         info!(
             "{}: conf: \n{}",
             function!(),
@@ -114,5 +110,5 @@ fn main() {
         pools: Vec::new(),
     };
     conf.init();
-    conf.send();
+    conf.send_all();
 }

@@ -1,4 +1,7 @@
-use std::io::{Read, Write};
+use std::{
+    fmt::format,
+    io::{Read, Write},
+};
 
 #[macro_use]
 extern crate log;
@@ -34,24 +37,6 @@ struct Config {
 }
 
 impl Config {
-    fn init_pool_id(&mut self, stream: &mut std::net::TcpStream) {
-        let mut pool_id_str = String::new();
-        stream
-            .read_to_string(&mut pool_id_str)
-            .expect(&format!("{}: read_to_string failed", function!()));
-        self.pool_id = pool_id_str
-            .parse()
-            .expect(&format!("{}: parse failed", pool_id_str));
-    }
-
-    fn init_peers(&mut self, stream: &mut std::net::TcpStream) {
-        let mut peers_str = String::new();
-        stream
-            .read_to_string(&mut peers_str)
-            .expect(&format!("{}: read_to_string failed", function!()));
-        self.peers = peers_str.split_whitespace().map(str::to_string).collect();
-    }
-
     fn validate(&self) {
         let peer_count = self.peers.len();
         if peer_count < 1 {
@@ -70,8 +55,17 @@ impl Config {
             .expect(&format!("{}: bind failed", function!()))
             .accept()
             .expect(&format!("{}: accept failed", function!()));
-        self.init_pool_id(&mut stream);
-        self.init_peers(&mut stream);
+        let mut payload = String::new();
+        stream
+            .read_to_string(&mut payload)
+            .expect(&format!("{}: read_to_string failed", function!()));
+        let splitted: Vec<String> = payload.split_whitespace().map(str::to_string).collect();
+        self.pool_id = splitted
+            .get(0)
+            .expect(&format!("{}: get failed", function!()))
+            .parse()
+            .expect(&format!("{}: parse failed", function!()));
+        self.peers = splitted[1..].to_vec();
         self.validate();
         info!(
             "{}: \n{}",
@@ -80,15 +74,6 @@ impl Config {
         );
     }
 }
-//
-// #[derive(serde::Serialize, serde::Deserialize)]
-// struct Consensus {}
-//
-// impl Consensus {
-//     fn commit(&mut self, request: &String) {}
-//
-//     fn init(&mut self) {}
-// }
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Clone)]
 enum TokenT {
