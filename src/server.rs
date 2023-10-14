@@ -1,7 +1,4 @@
-use std::{
-    io::{Read, Write},
-    net::TcpListener,
-};
+use std::io::{Read, Write};
 
 #[macro_use]
 extern crate log;
@@ -37,28 +34,26 @@ struct Config {
 }
 
 impl Config {
-    fn init_pool_id(&mut self, args: &Vec<String>, listener: &std::net::TcpListener) {
-        let accept_result = listener.accept();
-        if accept_result.is_err() {
-            panic!("{}: accept failed", function!());
-        }
-        let (stream, addr) = accept_result.unwrap();
-        //
-        self.pool_id = args
-            .get(1)
-            .expect(&format!("{}: pool_id missing", function!()))
+    fn init_pool_id(&mut self, stream: &mut std::net::TcpStream) {
+        let mut pool_id_str = String::new();
+        stream
+            .read_to_string(&mut pool_id_str)
+            .expect(&format!("{}: read_to_string failed", function!()));
+        self.pool_id = pool_id_str
             .parse()
-            .expect(&format!("{}: invalid pool_id", function!()));
+            .expect(&format!("{}: parse failed", pool_id_str));
     }
 
-    fn init_peers(&mut self, args: &Vec<String>) {
-        for i in 2..args.len() {
-            self.peers.push(args.get(i).unwrap().to_owned());
-        }
+    fn init_peers(&mut self, stream: &mut std::net::TcpStream) {
+        let mut peers_str = String::new();
+        stream
+            .read_to_string(&mut peers_str)
+            .expect(&format!("{}: read_to_string failed", function!()));
+        self.peers = peers_str.split_whitespace().map(str::to_string).collect();
     }
 
-    fn validate(args: &Vec<String>) {
-        let peer_count = args.len() - 2;
+    fn validate(&self) {
+        let peer_count = self.peers.len();
         if peer_count < 1 {
             panic!("{}: peer addresses are missing", function!());
         }
@@ -70,18 +65,19 @@ impl Config {
         }
     }
 
-    fn init(&mut self, args: &Vec<String>) -> std::net::TcpListener {
-        let listener =
-            std::net::TcpListener::bind(":7777").expect(&format!("{}: bind failed", function!()));
-        self.init_pool_id(args, &listener);
-        Config::validate(args);
-        self.init_peers(args);
+    fn init(&mut self) {
+        let (mut stream, _) = std::net::TcpListener::bind("0.0.0.0:6789")
+            .expect(&format!("{}: bind failed", function!()))
+            .accept()
+            .expect(&format!("{}: accept failed", function!()));
+        self.init_pool_id(&mut stream);
+        self.init_peers(&mut stream);
+        self.validate();
         info!(
             "{}: \n{}",
             function!(),
             serde_json::to_string_pretty(&self).unwrap()
         );
-        return listener;
     }
 }
 //
@@ -597,13 +593,11 @@ impl Statement {
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
-struct Row {
-
-}
+struct Row {}
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Database {
-    rows: Vec<Row>
+    rows: Vec<Row>,
 }
 
 impl Database {
@@ -628,10 +622,9 @@ struct Server {
 }
 
 impl Server {
-    fn init(&mut self, args: &Vec<String>) -> std::net::TcpListener {
-        let listener = self.conf.init(args);
+    fn init(&mut self) {
+        self.conf.init();
         self.database.init();
-        return listener;
     }
 
     fn apply(&mut self, statement_str: &String) -> Result<String, String> {
@@ -648,7 +641,7 @@ impl Server {
         return result;
     }
 
-    fn handle_connection(&mut self, mut stream: std::net::TcpStream) {
+    fn handle_connection(&mut self, stream: &mut std::net::TcpStream) {
         let mut statement_str: String = String::new();
         stream.read_to_string(&mut statement_str).unwrap();
         let apply_result = self.apply(&statement_str);
@@ -661,25 +654,24 @@ impl Server {
         }
     }
 
-    fn listen(&mut self, listener: TcpListener) {
+    fn listen(&mut self) {
+        let listener = std::net::TcpListener::bind("0.0.0.0:6789")
+            .expect(&format!("{}: bind failed", function!()));
         for stream in listener.incoming() {
-            let stream_copy: std::net::TcpStream = stream.unwrap();
-            self.handle_connection(stream_copy);
+            self.handle_connection(&mut stream.unwrap());
         }
     }
 }
 
 fn main() {
     env_logger::init();
-    let args: Vec<String> = std::env::args().collect();
     let mut server = Server {
         conf: Config {
             pool_id: 0,
             peers: Vec::new(),
         },
-        database: Database {rows: Vec::new()},
+        database: Database { rows: Vec::new() },
     };
-    let listener = server.init(&args);
-    server.listen(listener);
+    server.init();
+    server.listen();
 }
-
