@@ -53,7 +53,7 @@ impl Config {
                 current_pool += 1;
                 j = 0;
             }
-            *self.pools.get_mut(i).unwrap() = current_pool;
+            self.pools.push(current_pool);
             j += 1;
         }
     }
