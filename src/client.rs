@@ -94,7 +94,6 @@ impl Config {
         self.init_shard_count();
         self.init_addresses();
         self.init_pools();
-        self.send_all();
         info!(
             "{}: conf: \n{}",
             function!(),
@@ -105,6 +104,7 @@ impl Config {
 
 fn main() {
     env_logger::init();
+    trace!("hey");
     let mut conf = Config {
         shard_count: 0,
         addresses: Vec::new(),
