@@ -7,8 +7,8 @@ edition = "2021"
 name = "diserver"
 path = "src/server.rs"
 
-[[bin]]
-name = "diclient"
+[[lib]]
+name = "dianadb"
 path = "src/client.rs"
 
 [profile.release]
