@@ -73,6 +73,7 @@ impl Config {
     }
 
     fn send(&self, address: &String, pool: &usize, peers: &String) {
+        info!("{}: sending config to {}", function!(), address);
         let mut stream = std::net::TcpStream::connect(address)
             .expect(&format!("{}: connect failed", function!()));
         stream.write_all(format!("{} {}", pool.to_string(), peers).as_bytes())
