@@ -8,7 +8,7 @@ name = "diserver"
 path = "src/server.rs"
 
 [[lib]]
-name = "dianadb"
+name = "client"
 path = "src/client.rs"
 crate-type = "lib"
 
