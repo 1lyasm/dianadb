@@ -2,7 +2,7 @@
 extern crate log;
 
 #[macro_use]
-mod server;
+mod util;
 
 pub mod client {
     use std::io::Write;
@@ -18,9 +18,9 @@ pub mod client {
         fn init_shard_count(&mut self) {
             self.shard_count = std::env::args()
                 .nth(1)
-                .expect(&format!("{}: shard_count is missing", function!()))
+                .expect(&format!("{}: shard_count is missing", crate::function!()))
                 .parse()
-                .expect(&format!("{}: invalid shard_count", function!()));
+                .expect(&format!("{}: invalid shard_count", crate::function!()));
         }
 
         fn validate(&self) {
@@ -34,7 +34,7 @@ pub mod client {
                 is_valid = false;
             }
             if !is_valid {
-                panic!("{}: invalid conf", function!());
+                panic!("{}: invalid conf", crate::function!());
             }
         }
 
@@ -74,12 +74,12 @@ pub mod client {
         }
 
         fn send(&self, address: &String, pool: &usize, peers: &String) {
-            info!("{}: sending config to {}", function!(), address);
+            info!("{}: sending config to {}", crate::function!(), address);
             let mut stream = std::net::TcpStream::connect(address)
-                .expect(&format!("{}: connect failed", function!()));
+                .expect(&format!("{}: connect failed", crate::function!()));
             stream
                 .write_all(format!("{} {}", pool.to_string(), peers).as_bytes())
-                .expect(&format!("{}: write_all failed", function!()));
+                .expect(&format!("{}: write_all failed", crate::function!()));
         }
 
         fn send_all(&self) {
@@ -98,7 +98,7 @@ pub mod client {
             self.init_pools();
             info!(
                 "{}: conf: \n{}",
-                function!(),
+                crate::function!(),
                 serde_json::to_string_pretty(&self).unwrap()
             );
         }
@@ -109,13 +109,11 @@ pub mod client {
     }
 
     impl Client {
-        pub fn run_statement(&self, statement: &String) -> Result<server::Table, String> {
-            return Ok(server::Table { rows: Vec::new() });
-        }
+        pub fn run_statement(&self, statement: &String) {}
 
         pub fn connect() -> Result<Client, String> {
             env_logger::init();
-            info!("{}: client started", function!());
+            info!("{}: client started", crate::function!());
             let mut conf = Config {
                 shard_count: 0,
                 addresses: Vec::new(),
