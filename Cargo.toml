@@ -10,6 +10,7 @@ path = "src/server.rs"
 [[lib]]
 name = "dianadb"
 path = "src/client.rs"
+crate-type = "lib"
 
 [profile.release]
 strip = "symbols"

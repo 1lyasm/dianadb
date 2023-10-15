@@ -91,6 +91,7 @@ impl Config {
         );
     }
 }
+
 mod dianadb {
     struct Client {
         conf: Config,
@@ -107,7 +108,7 @@ mod dianadb {
             };
             conf.init();
             conf.send_all();
-            return Client{conf};
+            return Client { conf };
         }
     }
 }
