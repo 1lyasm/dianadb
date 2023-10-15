@@ -104,7 +104,7 @@ pub mod client {
         }
     }
 
-    struct Client {
+    pub struct Client {
         conf: Config,
     }
 
