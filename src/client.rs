@@ -67,7 +67,7 @@ impl Config {
             pool_addresses
                 .get_mut(*self.pools.get(i).unwrap())
                 .unwrap()
-                .push_str(&(self.addresses.get(i).unwrap().to_owned()));
+                .push_str(&(self.addresses.get(i).unwrap().to_owned() + " "));
         }
         return pool_addresses;
     }
@@ -104,7 +104,7 @@ impl Config {
 
 fn main() {
     env_logger::init();
-    trace!("hey");
+    info!("{}: client started", function!());
     let mut conf = Config {
         shard_count: 0,
         addresses: Vec::new(),

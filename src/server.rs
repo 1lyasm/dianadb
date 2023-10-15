@@ -650,6 +650,7 @@ impl Server {
 
 fn main() {
     env_logger::init();
+    info!("{}: server started", function!());
     let mut server = Server {
         conf: Config {
             pool_id: 0,
