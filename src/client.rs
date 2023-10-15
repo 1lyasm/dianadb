@@ -111,7 +111,7 @@ pub mod client {
     impl Client {
         pub fn run_statement(&self, statement: &String) {}
 
-        pub fn connect() -> Client {
+        pub fn connect() -> Result<Client, String> {
             env_logger::init();
             info!("{}: client started", crate::function!());
             let mut conf = Config {
@@ -121,7 +121,7 @@ pub mod client {
             };
             conf.init();
             conf.send_all();
-            return Client { conf };
+            return Ok(Client { conf });
         }
     }
 }
