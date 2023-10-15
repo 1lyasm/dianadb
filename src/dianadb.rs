@@ -582,6 +582,11 @@ pub struct Table {
     pub rows: Vec<Row>,
 }
 
+impl Table {
+    pub fn print(&self) {
+    }
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Database {}
 
