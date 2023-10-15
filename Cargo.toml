@@ -4,9 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "client"
-path = "src/client.rs"
-
+name = "dianadb"
+path = "src/dianadb.rs"
 
 [[bin]]
 name = "diserver"
