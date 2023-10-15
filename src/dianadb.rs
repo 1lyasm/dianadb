@@ -583,8 +583,7 @@ pub struct Table {
 }
 
 impl Table {
-    pub fn print(&self) {
-    }
+    pub fn print(&self) {}
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -675,14 +674,6 @@ struct ClientConfig {
 }
 
 impl ClientConfig {
-    fn init_shard_count(&mut self) {
-        self.shard_count = std::env::args()
-            .nth(1)
-            .expect(&format!("{}: shard_count is missing", crate::function!()))
-            .parse()
-            .expect(&format!("{}: invalid shard_count", crate::function!()));
-    }
-
     fn validate(&self) {
         let mut is_valid = true;
         let server_count = self.addresses.len();
@@ -698,25 +689,20 @@ impl ClientConfig {
         }
     }
 
-    fn init_addresses(&mut self) {
-        std::io::stdin()
-            .lines()
-            .for_each(|line| self.addresses.push(line.unwrap()));
-        self.validate();
-    }
-
-    fn init_pools(&mut self) {
+    fn init_pools(shard_count: usize, addresses: &Vec<String>) -> Vec<usize> {
         let (mut current_pool, mut j) = (0, 0);
-        let server_count = self.addresses.len();
-        let replica_count = server_count / self.shard_count;
-        for i in 0..server_count {
+        let server_count = addresses.len();
+        let replica_count = server_count / shard_count;
+        let mut pools = Vec::new();
+        for _ in 0..server_count {
             if j == replica_count {
                 current_pool += 1;
                 j = 0;
             }
-            self.pools.push(current_pool);
+            pools.push(current_pool);
             j += 1;
         }
+        return pools;
     }
 
     fn merge_by_pools(&self) -> Vec<String> {
@@ -751,17 +737,6 @@ impl ClientConfig {
             self.send(address, pool, &peers);
         }
     }
-
-    fn init(&mut self) {
-        self.init_shard_count();
-        self.init_addresses();
-        self.init_pools();
-        info!(
-            "{}: conf: \n{}",
-            crate::function!(),
-            serde_json::to_string_pretty(&self).unwrap()
-        );
-    }
 }
 
 pub struct Client {
@@ -773,16 +748,21 @@ impl Client {
         return Ok(Table { rows: Vec::new() });
     }
 
-    pub fn connect() -> Result<Client, String> {
+    pub fn connect(shard_count: usize, addresses: &Vec<String>) -> Result<Client, String> {
         env_logger::init();
         info!("{}: client started", crate::function!());
-        let mut conf = ClientConfig {
-            shard_count: 0,
-            addresses: Vec::new(),
-            pools: Vec::new(),
+        let conf = ClientConfig {
+            shard_count,
+            addresses: addresses.to_owned(),
+            pools: ClientConfig::init_pools(shard_count, &addresses),
         };
-        conf.init();
+        info!(
+            "{}: conf: \n{}",
+            crate::function!(),
+            serde_json::to_string_pretty(&conf).unwrap()
+        );
         conf.send_all();
         return Ok(Client { conf });
     }
 }
+
