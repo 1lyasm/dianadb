@@ -66,13 +66,13 @@ impl Config {
             .parse()
             .expect(&format!("{}: parse failed", function!()));
         self.peers = splitted[1..].to_vec();
-        self.validate();
         info!(
             "{}: \n{}",
             function!(),
             serde_json::to_string_pretty(&self).unwrap()
         );
-    }
+        self.validate();
+   }
 }
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Clone)]
