@@ -109,9 +109,9 @@ pub mod client {
     }
 
     impl Client {
-        fn run_statement(&self, statement: &String) {}
+        pub fn run_statement(&self, statement: &String) {}
 
-        fn connect() -> Client {
+        pub fn connect() -> Client {
             env_logger::init();
             info!("{}: client started", crate::function!());
             let mut conf = Config {
