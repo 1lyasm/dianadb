@@ -92,24 +92,23 @@ impl Config {
     }
 }
 
-mod dianadb {
-    struct Client {
-        conf: Config,
-    }
-    impl Client {
-        fn run_statement(&self, statement: &String) {}
-        fn connect() -> Client {
-            env_logger::init();
-            info!("{}: client started", function!());
-            let mut conf = Config {
-                shard_count: 0,
-                addresses: Vec::new(),
-                pools: Vec::new(),
-            };
-            conf.init();
-            conf.send_all();
-            return Client { conf };
-        }
+struct Client {
+    conf: Config,
+}
+
+impl Client {
+    fn run_statement(&self, statement: &String) {}
+    fn connect() -> Client {
+        env_logger::init();
+        info!("{}: client started", function!());
+        let mut conf = Config {
+            shard_count: 0,
+            addresses: Vec::new(),
+            pools: Vec::new(),
+        };
+        conf.init();
+        conf.send_all();
+        return Client { conf };
     }
 }
 

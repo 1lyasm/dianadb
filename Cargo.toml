@@ -3,14 +3,14 @@ name = "dianadb"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "client"
+path = "src/client.rs"
+
+
 [[bin]]
 name = "diserver"
 path = "src/server.rs"
-
-[[lib]]
-name = "client"
-path = "src/client.rs"
-crate-type = "lib"
 
 [profile.release]
 strip = "symbols"
