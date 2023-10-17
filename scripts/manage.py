@@ -12,15 +12,14 @@ def make_ip_id_map(ips):
     return ip_id_map
 
 def print_result(result, ip_id_map):
+    print("\n")
     for key, value in result.items():
         id = ip_id_map[key.host]
         print(f"{id}: \n{value.stdout}")
 
-def run_command(command, group, ip_id_map):
-    result = group.run(command, hide=True)
-    print_result(result, ip_id_map)
-
 def get_file_name():
+    if len(sys.argv) < 2:
+        sys.exit("main: usage: s for servers c for clients")
     if sys.argv[1] == "s":
         return "server_ips.txt"
     elif sys.argv[1] == "c":
@@ -38,9 +37,10 @@ def main():
     while 1:
         command = input("> ")
         try:
-            run_command(command, group, ip_id_map)
-        except fabric.exceptions.GroupException:
-            print("command failed")
+            result = group.run(command, hide=False)
+            print_result(result, ip_id_map)
+        except fabric.exceptions.GroupException as e:
+            print(f"\nmain: command failed")
 
 if __name__ == "__main__":
     main()
