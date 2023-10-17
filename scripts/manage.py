@@ -2,7 +2,7 @@
 
 import fabric
 import invoke
-
+import sys
 
 def make_ip_id_map(ips):
     ip_id_map = {}
@@ -20,8 +20,16 @@ def run_command(command, group, ip_id_map):
     result = group.run(command, hide=True)
     print_result(result, ip_id_map)
 
+def get_file_name():
+    if sys.argv[1] == "s":
+        return "server_ips.txt"
+    elif sys.argv[1] == "c":
+        return "client_ips.txt"
+    else:
+        sys.exit("main: invalid input")
+
 def main():
-    with open('server_ips.txt', 'r') as file:
+    with open(get_file_name(), "r") as file:
         ips = file.read().split()
     ip_id_map = make_ip_id_map(ips)
     group = fabric.ThreadingGroup(*ips,
