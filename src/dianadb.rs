@@ -59,7 +59,7 @@ impl ServerConfig {
     }
 
     fn init(&mut self) {
-        let (mut stream, _) = std::net::TcpListener::bind("0.0.0.0:6789")
+        let (mut stream, _) = Server::bind(&"0.0.0.0:6789".to_string())
             .expect(&format!("{}: bind failed", crate::function!()))
             .accept()
             .expect(&format!("{}: accept failed", crate::function!()));
@@ -619,16 +619,15 @@ pub struct Server {
 }
 
 impl Server {
-    fn bind(addr_str: &String) -> Result<std::net::TcpListener, String> {
+    fn bind(addr_str: &String) -> Result<std::net::TcpListener, std::net::AddrParseError> {
         let bind_addr: std::net::SocketAddr = addr_str
             .parse()?;
-            // .expect(&format!("{}: parse failed", crate::function!()));
         let listener = std::net::TcpListener::bind(&bind_addr)
             .expect(&format!("{}: bind failed", crate::function!()));
         let fd = listener.as_fd();
         nix::sys::socket::setsockopt(&fd, nix::sys::socket::sockopt::ReuseAddr, &true)
             .expect(&format!("{}: setsockopt failed", function!()));
-        return listener;
+        return Ok(listener);
     }
 
     fn init(&mut self) {
@@ -664,7 +663,7 @@ impl Server {
     }
 
     fn listen(&mut self) {
-        let listener = std::net::TcpListener::bind("0.0.0.0:6789")
+        let listener = std::net::TcpListener::bind(&"0.0.0.0:6789".to_string())
             .expect(&format!("{}: bind failed", crate::function!()));
         for stream in listener.incoming() {
             self.handle_connection(&mut stream.unwrap());
