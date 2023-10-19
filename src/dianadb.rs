@@ -70,7 +70,7 @@ impl ServerConfig {
         let splitted: Vec<String> = payload.split_whitespace().map(str::to_string).collect();
         self.pool_id = ServerConfig::extract_usize(&splitted, 0);
         self.global_id = ServerConfig::extract_usize(&splitted, 1);
-        self.peers = splitted[1..].to_vec();
+        self.peers = splitted[2..].to_vec();
         info!(
             "{}: \n{}",
             crate::function!(),
