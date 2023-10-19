@@ -4,7 +4,9 @@ extern crate log;
 #[macro_use]
 mod util;
 
-use std::io::{Read, Write};
+extern crate nix;
+
+use std::{io::{Read, Write}, os::fd::{AsRawFd, AsFd}, fmt::format};
 
 #[macro_export]
 macro_rules! count {
@@ -31,7 +33,7 @@ macro_rules! iterable_enum {
 struct ServerConfig {
     pool_id: usize,
     peers: Vec<String>,
-    global_id: usize
+    global_id: usize,
 }
 
 impl ServerConfig {
@@ -617,6 +619,18 @@ pub struct Server {
 }
 
 impl Server {
+    fn bind(addr_str: &String) -> Result<std::net::TcpListener, String> {
+        let bind_addr: std::net::SocketAddr = addr_str
+            .parse()?;
+            // .expect(&format!("{}: parse failed", crate::function!()));
+        let listener = std::net::TcpListener::bind(&bind_addr)
+            .expect(&format!("{}: bind failed", crate::function!()));
+        let fd = listener.as_fd();
+        nix::sys::socket::setsockopt(&fd, nix::sys::socket::sockopt::ReuseAddr, &true)
+            .expect(&format!("{}: setsockopt failed", function!()));
+        return listener;
+    }
+
     fn init(&mut self) {
         self.conf.init();
         self.database.init();
@@ -664,7 +678,7 @@ impl Server {
             conf: ServerConfig {
                 pool_id: 0,
                 peers: Vec::new(),
-                global_id: 0
+                global_id: 0,
             },
             database: Database {},
         };
@@ -731,8 +745,9 @@ impl ClientConfig {
         let mut stream = std::net::TcpStream::connect(address)
             .expect(&format!("{}: connect failed", crate::function!()));
         stream
-            .write_all(format!("{} {} {}", pool.to_string(), global_id.to_string(), peers)
-                       .as_bytes())
+            .write_all(
+                format!("{} {} {}", pool.to_string(), global_id.to_string(), peers).as_bytes(),
+            )
             .expect(&format!("{}: write_all failed", crate::function!()));
     }
 
@@ -774,4 +789,3 @@ impl Client {
         return Ok(Client { conf });
     }
 }
-
