@@ -31,6 +31,7 @@ macro_rules! iterable_enum {
 struct ServerConfig {
     pool_id: usize,
     peers: Vec<String>,
+    global_id: usize
 }
 
 impl ServerConfig {
@@ -47,6 +48,14 @@ impl ServerConfig {
         }
     }
 
+    fn extract_usize(words: &Vec<String>, index: usize) -> usize {
+        return words
+            .get(index)
+            .expect(&format!("{}: get failed", crate::function!()))
+            .parse()
+            .expect(&format!("{}: parse failed", crate::function!()));
+    }
+
     fn init(&mut self) {
         let (mut stream, _) = std::net::TcpListener::bind("0.0.0.0:6789")
             .expect(&format!("{}: bind failed", crate::function!()))
@@ -57,11 +66,8 @@ impl ServerConfig {
             .read_to_string(&mut payload)
             .expect(&format!("{}: read_to_string failed", crate::function!()));
         let splitted: Vec<String> = payload.split_whitespace().map(str::to_string).collect();
-        self.pool_id = splitted
-            .get(0)
-            .expect(&format!("{}: get failed", crate::function!()))
-            .parse()
-            .expect(&format!("{}: parse failed", crate::function!()));
+        self.pool_id = ServerConfig::extract_usize(&splitted, 0);
+        self.global_id = ServerConfig::extract_usize(&splitted, 1);
         self.peers = splitted[1..].to_vec();
         info!(
             "{}: \n{}",
@@ -658,6 +664,7 @@ impl Server {
             conf: ServerConfig {
                 pool_id: 0,
                 peers: Vec::new(),
+                global_id: 0
             },
             database: Database {},
         };
@@ -719,12 +726,13 @@ impl ClientConfig {
         return pool_addresses;
     }
 
-    fn send(&self, address: &String, pool: &usize, peers: &String) {
+    fn send(&self, address: &String, pool: &usize, global_id: usize, peers: &String) {
         info!("{}: sending config to {}", crate::function!(), address);
         let mut stream = std::net::TcpStream::connect(address)
             .expect(&format!("{}: connect failed", crate::function!()));
         stream
-            .write_all(format!("{} {}", pool.to_string(), peers).as_bytes())
+            .write_all(format!("{} {} {}", pool.to_string(), global_id.to_string(), peers)
+                       .as_bytes())
             .expect(&format!("{}: write_all failed", crate::function!()));
     }
 
@@ -734,7 +742,7 @@ impl ClientConfig {
             let address = self.addresses.get(i).unwrap();
             let pool = self.pools.get(i).unwrap();
             let peers = pool_addresses.get(*pool).unwrap();
-            self.send(address, pool, &peers);
+            self.send(address, pool, i, &peers);
         }
     }
 }
@@ -761,6 +769,7 @@ impl Client {
             crate::function!(),
             serde_json::to_string_pretty(&conf).unwrap()
         );
+        conf.validate();
         conf.send_all();
         return Ok(Client { conf });
     }
