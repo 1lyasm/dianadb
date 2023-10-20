@@ -6,7 +6,11 @@ mod util;
 
 extern crate nix;
 
-use std::{io::{Read, Write}, os::fd::{AsRawFd, AsFd}, fmt::format};
+use std::{
+    fmt::format,
+    io::{Read, Write},
+    os::fd::{AsFd, AsRawFd},
+};
 
 #[macro_export]
 macro_rules! count {
@@ -59,7 +63,7 @@ impl ServerConfig {
     }
 
     fn init(&mut self) {
-        let (mut stream, _) = Server::bind(&"0.0.0.0:6789".to_string())
+        let (mut stream, _) = std::net::TcpListener::bind("0.0.0.0:6789")
             .expect(&format!("{}: bind failed", crate::function!()))
             .accept()
             .expect(&format!("{}: accept failed", crate::function!()));
@@ -619,17 +623,6 @@ pub struct Server {
 }
 
 impl Server {
-    fn bind(addr_str: &String) -> Result<std::net::TcpListener, std::net::AddrParseError> {
-        let bind_addr: std::net::SocketAddr = addr_str
-            .parse()?;
-        let listener = std::net::TcpListener::bind(&bind_addr)
-            .expect(&format!("{}: bind failed", crate::function!()));
-        let fd = listener.as_fd();
-        nix::sys::socket::setsockopt(&fd, nix::sys::socket::sockopt::ReuseAddr, &true)
-            .expect(&format!("{}: setsockopt failed", function!()));
-        return Ok(listener);
-    }
-
     fn init(&mut self) {
         self.conf.init();
         self.database.init();
@@ -663,7 +656,7 @@ impl Server {
     }
 
     fn listen(&mut self) {
-        let listener = std::net::TcpListener::bind(&"0.0.0.0:6789".to_string())
+        let listener = std::net::TcpListener::bind("0.0.0.0:6789")
             .expect(&format!("{}: bind failed", crate::function!()));
         for stream in listener.incoming() {
             self.handle_connection(&mut stream.unwrap());
