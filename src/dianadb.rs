@@ -6,7 +6,7 @@ mod util;
 
 extern crate nix;
 
-use std::io::{Read, Write};
+use std::{io::{Read, Write}, fmt::format};
 
 #[macro_export]
 macro_rules! count {
@@ -56,6 +56,7 @@ struct ServerConfig {
     pool_id: usize,
     peers: Vec<String>,
     global_id: usize,
+    me: String
 }
 
 impl ServerConfig {
@@ -90,9 +91,11 @@ impl ServerConfig {
         self.pool_id = ServerConfig::extract_usize(&splitted, 0)?;
         self.global_id = ServerConfig::extract_usize(&splitted, 1)?;
         self.peers = splitted[2..].to_vec();
+        self.me = format!("S{}", self.global_id.to_string());
         info!(
-            "{}: \n{}",
+            "{}: {}: \n{}",
             crate::function!(),
+            self.me,
             serde_json::to_string_pretty(&self)?
         );
         self.validate()?;
@@ -742,6 +745,7 @@ impl Server {
                 pool_id: 0,
                 peers: Vec::new(),
                 global_id: 0,
+                me: String::new()
             },
             database: Database {},
         };
