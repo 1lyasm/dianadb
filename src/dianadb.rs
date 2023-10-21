@@ -6,11 +6,7 @@ mod util;
 
 extern crate nix;
 
-use std::{
-    fmt::format,
-    io::{Read, Write},
-    os::fd::{AsFd, AsRawFd},
-};
+use std::io::{Read, Write};
 
 #[macro_export]
 macro_rules! count {
@@ -33,6 +29,28 @@ macro_rules! iterable_enum {
     };
 }
 
+fn get_res<T>(iterable: &[T], index: usize) -> Result<&T, Box<dyn std::error::Error>> {
+    let result;
+    let opt = iterable.get(index);
+    if opt.is_some() {
+        result = Ok(opt.unwrap());
+    } else {
+        result = Err("index out of bounds".into());
+    }
+    return result;
+}
+
+fn get_res_mut<T>(iterable: &mut [T], index: usize) -> Result<&mut T, Box<dyn std::error::Error>> {
+    let result;
+    let opt = iterable.get_mut(index);
+    if opt.is_some() {
+        result = Ok(opt.unwrap());
+    } else {
+        result = Err("index out of bounds".into());
+    }
+    return result;
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 struct ServerConfig {
     pool_id: usize,
@@ -41,46 +59,44 @@ struct ServerConfig {
 }
 
 impl ServerConfig {
-    fn validate(&self) {
+    fn validate(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut res = Ok(());
         let peer_count = self.peers.len();
         if peer_count < 1 {
-            panic!("{}: peer addresses are missing", crate::function!());
+            res = Err(format!("{}: peer addresses are missing", crate::function!()).into());
         }
         if peer_count < 2 {
-            panic!("{}: single peer replica not allowed", crate::function!());
+            res = Err(format!("{}: single replica not allowed", crate::function!()).into());
         }
         if peer_count % 2 == 0 {
-            panic!("{}: peer count must be odd", crate::function!());
+            res = Err(format!("{}: peer count must be odd", crate::function!()).into());
         }
+        return res;
     }
 
-    fn extract_usize(words: &Vec<String>, index: usize) -> usize {
-        return words
-            .get(index)
-            .expect(&format!("{}: get failed", crate::function!()))
-            .parse()
-            .expect(&format!("{}: parse failed", crate::function!()));
+    fn extract_usize(
+        words: &Vec<String>,
+        index: usize,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        let word = get_res(words, index)?;
+        return Ok(word.parse::<usize>()?);
     }
 
-    fn init(&mut self) {
-        let (mut stream, _) = std::net::TcpListener::bind("0.0.0.0:6789")
-            .expect(&format!("{}: bind failed", crate::function!()))
-            .accept()
-            .expect(&format!("{}: accept failed", crate::function!()));
+    fn init(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let (mut stream, _) = std::net::TcpListener::bind("0.0.0.0:6789")?.accept()?;
         let mut payload = String::new();
-        stream
-            .read_to_string(&mut payload)
-            .expect(&format!("{}: read_to_string failed", crate::function!()));
+        stream.read_to_string(&mut payload)?;
         let splitted: Vec<String> = payload.split_whitespace().map(str::to_string).collect();
-        self.pool_id = ServerConfig::extract_usize(&splitted, 0);
-        self.global_id = ServerConfig::extract_usize(&splitted, 1);
+        self.pool_id = ServerConfig::extract_usize(&splitted, 0)?;
+        self.global_id = ServerConfig::extract_usize(&splitted, 1)?;
         self.peers = splitted[2..].to_vec();
         info!(
             "{}: \n{}",
             crate::function!(),
-            serde_json::to_string_pretty(&self).unwrap()
+            serde_json::to_string_pretty(&self)?
         );
-        self.validate();
+        self.validate()?;
+        return Ok(());
     }
 }
 
@@ -212,12 +228,16 @@ struct Statement {
 }
 
 impl Statement {
-    fn next_eq(index: &mut usize, statement: &[u8], target: &[u8]) -> bool {
+    fn next_eq(
+        index: &mut usize,
+        statement: &[u8],
+        target: &[u8],
+    ) -> Result<bool, Box<dyn std::error::Error>> {
         let mut is_eq = true;
         let mut i = 0;
         let mut new_index = *index;
         while i < target.len() && is_eq {
-            if statement.get(new_index).unwrap() != target.get(i).unwrap() {
+            if statement[new_index as usize] != target[i as usize] {
                 is_eq = false;
             }
             i += 1;
@@ -226,14 +246,18 @@ impl Statement {
         if is_eq {
             *index = new_index;
         }
-        return is_eq;
+        return Ok(is_eq);
     }
 
-    fn read_ident(start: usize, statement: &[u8], word: &mut String) {
+    fn read_ident(
+        start: usize,
+        statement: &[u8],
+        word: &mut String,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut is_alnum = true;
         let mut i = start;
         while i < statement.len() && is_alnum {
-            let cur = statement.get(i).unwrap();
+            let cur = get_res(statement, i)?;
             if cur.is_ascii_alphanumeric() {
                 word.push(*cur as char);
             } else {
@@ -241,23 +265,33 @@ impl Statement {
             }
             i += 1;
         }
+        return Ok(());
     }
 
-    fn try_read_ident(index: &mut usize, cur: &u8, statement: &[u8], word: &mut String) -> bool {
+    fn try_read_ident(
+        index: &mut usize,
+        cur: &u8,
+        statement: &[u8],
+        word: &mut String,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
         let mut is_word = false;
         if cur.is_ascii_alphabetic() {
             is_word = true;
-            Statement::read_ident(*index, statement, word);
+            Statement::read_ident(*index, statement, word)?;
         }
-        return is_word;
+        return Ok(is_word);
     }
 
-    fn read_num(start: usize, statement: &[u8], num: &mut String) {
+    fn read_num(
+        start: usize,
+        statement: &[u8],
+        num: &mut String,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut is_digit = true;
         let mut i = start;
         let (mut dot_count, mut has_two_dots) = (0, false);
         while i < statement.len() && is_digit && !has_two_dots {
-            let cur = statement.get(i).unwrap();
+            let cur = get_res(statement, i)?;
             if cur.is_ascii_digit() {
                 num.push(*cur as char);
             } else if cur == &b'.' {
@@ -272,34 +306,43 @@ impl Statement {
             }
             i += 1;
         }
+        return Ok(());
     }
 
-    fn try_read_num(index: &mut usize, cur: &u8, statement: &[u8], num: &mut String) -> bool {
+    fn try_read_num(
+        index: &mut usize,
+        cur: &u8,
+        statement: &[u8],
+        num: &mut String,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
         let mut is_num = false;
         if cur.is_ascii_digit() {
             is_num = true;
-            Statement::read_num(*index, statement, num);
+            Statement::read_num(*index, statement, num)?;
         }
-        return is_num;
+        return Ok(is_num);
     }
 
-    fn select_token(index: &mut usize, statement: &[u8]) -> Token {
-        let cur = statement.get(*index).unwrap();
+    fn select_token(
+        index: &mut usize,
+        statement: &[u8],
+    ) -> Result<Token, Box<dyn std::error::Error>> {
+        let cur = get_res(statement, *index)?;
         let mut val = String::new();
         let token_t = if cur.is_ascii_whitespace() {
             TokenT::Whitespace
         } else if cur == &b'=' {
             TokenT::Eq
         } else if cur == &b'>' {
-            if Statement::next_eq(index, statement, b"=") {
+            if Statement::next_eq(index, statement, b"=")? {
                 TokenT::GreaterEq
             } else {
                 TokenT::Greater
             }
         } else if cur == &b'<' {
-            if Statement::next_eq(index, statement, b">") {
+            if Statement::next_eq(index, statement, b">")? {
                 TokenT::NotEq
-            } else if Statement::next_eq(index, statement, b"=") {
+            } else if Statement::next_eq(index, statement, b"=")? {
                 TokenT::LessEq
             } else {
                 TokenT::Less
@@ -308,42 +351,46 @@ impl Statement {
             TokenT::Comma
         } else if cur == &b'.' {
             TokenT::Dot
-        } else if Statement::try_read_num(index, cur, statement, &mut val) {
+        } else if Statement::try_read_num(index, cur, statement, &mut val)? {
             TokenT::Num
-        } else if Statement::try_read_ident(index, cur, statement, &mut val) {
+        } else if Statement::try_read_ident(index, cur, statement, &mut val)? {
             TokenT::Ident
         } else {
             TokenT::Error
         };
         *index += 1;
-        return Token { token_t, val };
+        return Ok(Token { token_t, val });
     }
 
-    fn tokenize(statement_str: &String) -> Vec<Token> {
+    fn tokenize(statement_str: &String) -> Result<Vec<Token>, Box<dyn std::error::Error>> {
         let statement_bytes = statement_str.as_bytes();
         let mut tokens: Vec<Token> = vec![];
         let mut i = 0;
         while i < statement_str.len() {
             let mut token;
             loop {
-                token = Statement::select_token(&mut i, statement_bytes);
+                token = Statement::select_token(&mut i, statement_bytes)?;
                 if token.token_t != TokenT::Whitespace {
                     break;
                 }
             }
             tokens.push(token);
         }
-        return tokens;
+        return Ok(tokens);
     }
 
-    fn init_type(&mut self, token_index: &mut usize, tokens: &Vec<Token>) -> Result<(), String> {
+    fn init_type(
+        &mut self,
+        token_index: &mut usize,
+        tokens: &Vec<Token>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut result = Ok(());
         if *token_index < tokens.len() {
-            let first_token = tokens.get(*token_index).unwrap();
+            let first_token = get_res(tokens, *token_index)?;
             Statement::expect_token_t(&first_token.token_t, vec![TokenT::Ident])?;
             let val = &first_token.val;
             self.statement_t =
-                if val == "insert" && tokens.get(*token_index + 1).unwrap().val == "into" {
+                if val == "insert" && get_res(tokens, *token_index + 1)?.val == "into" {
                     StatementT::Insert
                 } else if val == "select" {
                     StatementT::Select
@@ -354,7 +401,8 @@ impl Statement {
                         "{}: did not expect {} as statement type string",
                         crate::function!(),
                         val
-                    ));
+                    )
+                    .into());
                     StatementT::Error
                 };
             *token_index += 1;
@@ -367,7 +415,7 @@ impl Statement {
         token_index: &mut usize,
         tokens: &Vec<Token>,
         keyword_strings: &Vec<String>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut result = Ok(());
         return result;
     }
@@ -377,12 +425,12 @@ impl Statement {
         token_index: &mut usize,
         tokens: &Vec<Token>,
         keyword_strings: &Vec<String>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut result = Ok(());
         let mut must_be_ident = true;
         let mut reached_keyword = false;
         while *token_index < tokens.len() && !reached_keyword {
-            let token = tokens.get(*token_index).unwrap();
+            let token = get_res(tokens, *token_index)?;
             let token_t = &token.token_t;
             if must_be_ident {
                 Statement::expect_token_t(token_t, vec![TokenT::Ident])?;
@@ -400,7 +448,7 @@ impl Statement {
         return result;
     }
 
-    fn expect_val(token: &Token, expecting: &String) -> Result<(), String> {
+    fn expect_val(token: &Token, expecting: &String) -> Result<(), Box<dyn std::error::Error>> {
         let mut result = Ok(());
         if &token.val != expecting {
             result = Err(format!(
@@ -408,19 +456,24 @@ impl Statement {
                 crate::function!(),
                 expecting,
                 &token.val
-            ));
+            )
+            .into());
         }
         return result;
     }
 
-    fn expect_keyword(token: &Token, keyword_strings: &Vec<String>) -> Result<(), String> {
+    fn expect_keyword(
+        token: &Token,
+        keyword_strings: &Vec<String>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut result = Ok(());
         if !keyword_strings.contains(&token.val) {
             result = Err(format!(
                 "{}: expected keyword, found: {}",
                 crate::function!(),
                 token.val
-            ));
+            )
+            .into());
         }
         return result;
     }
@@ -429,10 +482,10 @@ impl Statement {
         token_index: &mut usize,
         tokens: &Vec<Token>,
         word: &String,
-    ) -> Result<(), String> {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut result = Ok(());
         if *token_index < tokens.len() {
-            let token = tokens.get(*token_index).unwrap();
+            let token = get_res(tokens, *token_index)?;
             Statement::expect_token_t(&token.token_t, vec![TokenT::Ident])?;
             Statement::expect_val(token, word)?;
             *token_index += 1;
@@ -445,29 +498,33 @@ impl Statement {
         token_index: &mut usize,
         tokens: &Vec<Token>,
         keyword_strings: &Vec<String>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let result = Ok(());
         if *token_index < tokens.len() {
-            let token = tokens.get(*token_index).unwrap();
+            let token = get_res(tokens, *token_index)?;
             Statement::expect_token_t(&token.token_t, vec![TokenT::Ident])?;
             self.table_name = token.val.to_owned();
             *token_index += 1;
         }
         if *token_index < tokens.len() {
-            Statement::expect_keyword(tokens.get(*token_index).unwrap(), keyword_strings)?;
+            Statement::expect_keyword(get_res(tokens, *token_index)?, keyword_strings)?;
         }
         return result;
     }
 
-    fn expect_token_t(token_t: &TokenT, targets: Vec<TokenT>) -> Result<(), String> {
+    fn expect_token_t(
+        token_t: &TokenT,
+        targets: Vec<TokenT>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut result = Ok(());
         if !targets.contains(&token_t) {
             result = Err(format!(
                 "{}: expected one of {}, found: {}",
                 crate::function!(),
-                serde_json::to_string_pretty(&targets).unwrap(),
-                serde_json::to_string(&token_t).unwrap()
-            ));
+                serde_json::to_string_pretty(&targets)?,
+                serde_json::to_string(&token_t)?
+            )
+            .into());
         }
         return result;
     }
@@ -476,22 +533,19 @@ impl Statement {
         &mut self,
         token_index: &mut usize,
         tokens: &Vec<Token>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let result = Ok(());
-        let mut cur_token = &Token {
-            token_t: TokenT::Error,
-            val: String::new(),
-        };
+        let mut cur_token;
         let mut operator = TokenT::Error;
         let mut column_name = String::new();
         if *token_index < tokens.len() {
-            cur_token = tokens.get(*token_index).unwrap();
+            cur_token = get_res(tokens, *token_index)?;
             Statement::expect_token_t(&cur_token.token_t, vec![TokenT::Ident])?;
             column_name = cur_token.val.to_owned();
             *token_index += 1;
         }
         if *token_index < tokens.len() {
-            cur_token = tokens.get(*token_index).unwrap();
+            cur_token = get_res(tokens, *token_index)?;
             Statement::expect_token_t(
                 &cur_token.token_t,
                 vec![
@@ -506,7 +560,7 @@ impl Statement {
             *token_index += 1;
         }
         if *token_index < tokens.len() {
-            cur_token = tokens.get(*token_index).unwrap();
+            cur_token = get_res(tokens, *token_index)?;
             Statement::expect_token_t(&cur_token.token_t, vec![TokenT::Num])?;
             let number = cur_token.val.to_owned();
             self.predicate.comparisons.push(Comparison {
@@ -523,7 +577,7 @@ impl Statement {
         &mut self,
         token_index: &mut usize,
         tokens: &Vec<Token>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut result = Ok(());
         self.parse_comparison(token_index, tokens)?;
         if *token_index < tokens.len() {}
@@ -535,7 +589,7 @@ impl Statement {
         token_index: &mut usize,
         tokens: &Vec<Token>,
         keyword_strings: &Vec<String>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let result = Ok(());
         self.parse_select_columns(token_index, tokens, keyword_strings)?;
         Statement::parse_word(token_index, tokens, &"from".to_string())?;
@@ -550,19 +604,20 @@ impl Statement {
         token_index: &mut usize,
         tokens: &Vec<Token>,
         keyword_strings: &Vec<String>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut result = Ok(());
         return result;
     }
 
-    fn init_keyword_strings(strings: &mut Vec<String>) {
+    fn init_keyword_strings(strings: &mut Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
         for variant in Keyword::iter() {
-            strings.push(serde_json::to_string(&variant).unwrap());
+            strings.push(serde_json::to_string(&variant)?);
         }
+        return Ok(());
     }
 
-    fn parse(statement_str: &String) -> Result<Statement, String> {
-        let tokens: Vec<Token> = Statement::tokenize(&statement_str.to_ascii_lowercase());
+    fn parse(statement_str: &String) -> Result<Statement, Box<dyn std::error::Error>> {
+        let tokens: Vec<Token> = Statement::tokenize(&statement_str.to_ascii_lowercase())?;
         let mut statement = Statement {
             statement_t: StatementT::Select,
             columns: Vec::new(),
@@ -572,7 +627,7 @@ impl Statement {
             },
         };
         let mut keyword_strings: Vec<String> = Vec::new();
-        Statement::init_keyword_strings(&mut keyword_strings);
+        Statement::init_keyword_strings(&mut keyword_strings)?;
         let mut token_index = 0;
         statement.init_type(&mut token_index, &tokens)?;
         if statement.statement_t == StatementT::Insert {
@@ -602,15 +657,23 @@ impl Table {
 struct Database {}
 
 impl Database {
-    fn init(&mut self) {}
+    fn init(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        return Ok(());
+    }
 
-    fn run_statement(&mut self, statement_str: &String) -> Result<String, String> {
+    fn run_statement(
+        &mut self,
+        statement_str: &String,
+    ) -> Result<String, Box<dyn std::error::Error>> {
         let mut result = Ok(String::new());
-        let parse_result = Statement::parse(statement_str);
-        if parse_result.is_ok() {
-            let mut resp = String::new();
-        } else {
-            result = Err(parse_result.err().unwrap());
+        let parse_res = Statement::parse(statement_str);
+        match parse_res {
+            Ok(v) => {
+                let resp = String::new();
+            }
+            Err(e) => {
+                result = Err(e);
+            }
         }
         return result;
     }
@@ -623,47 +686,55 @@ pub struct Server {
 }
 
 impl Server {
-    fn init(&mut self) {
-        self.conf.init();
-        self.database.init();
+    fn init(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.conf.init()?;
+        self.database.init()?;
+        return Ok(());
     }
 
-    fn apply(&mut self, statement_str: &String) -> Result<String, String> {
+    fn apply(&mut self, statement_str: &String) -> Result<String, Box<dyn std::error::Error>> {
         let mut result = Ok(String::new());
         // self.consensus.commit(statement_str);
         // do not call run_statement immediately, read from log first
         let statement_result = self.database.run_statement(statement_str);
-        if statement_result.is_ok() {
-            let resp = statement_result.unwrap();
-            result = Ok(resp);
-        } else {
-            result = Err(statement_result.err().unwrap());
+        match statement_result {
+            Ok(v) => {
+                result = Ok(v);
+            }
+            Err(e) => {
+                result = Err(e);
+            }
         }
         return result;
     }
 
-    fn handle_connection(&mut self, stream: &mut std::net::TcpStream) {
+    fn handle_connection(
+        &mut self,
+        stream: &mut std::net::TcpStream,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut statement_str: String = String::new();
-        stream.read_to_string(&mut statement_str).unwrap();
+        stream.read_to_string(&mut statement_str)?;
         let apply_result = self.apply(&statement_str);
-        if apply_result.is_ok() {
-            stream.write_all(apply_result.unwrap().as_bytes()).unwrap();
-        } else {
-            stream
-                .write_all(apply_result.err().unwrap().as_bytes())
-                .unwrap();
+        match apply_result {
+            Ok(v) => {
+                stream.write_all(v.as_bytes())?;
+            }
+            Err(e) => {
+                stream.write_all(e.to_string().as_bytes())?;
+            }
         }
+        return Ok(());
     }
 
-    fn listen(&mut self) {
-        let listener = std::net::TcpListener::bind("0.0.0.0:6789")
-            .expect(&format!("{}: bind failed", crate::function!()));
+    fn listen(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let listener = std::net::TcpListener::bind("0.0.0.0:6789")?;
         for stream in listener.incoming() {
-            self.handle_connection(&mut stream.unwrap());
+            self.handle_connection(&mut stream?)?;
         }
+        return Ok(());
     }
 
-    pub fn run() {
+    pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         env_logger::init();
         info!("{}: server started", crate::function!());
         let mut server = Server {
@@ -674,8 +745,9 @@ impl Server {
             },
             database: Database {},
         };
-        server.init();
-        server.listen();
+        server.init()?;
+        server.listen()?;
+        return Ok(());
     }
 }
 
@@ -687,7 +759,8 @@ struct ClientConfig {
 }
 
 impl ClientConfig {
-    fn validate(&self) {
+    fn validate(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut result = Ok(());
         let mut is_valid = true;
         let server_count = self.addresses.len();
         let replica_count = server_count / self.shard_count;
@@ -698,8 +771,9 @@ impl ClientConfig {
             is_valid = false;
         }
         if !is_valid {
-            panic!("{}: invalid conf", crate::function!());
+            result = Err(format!("{}: invalid conf", crate::function!()).into());
         }
+        return result;
     }
 
     fn init_pools(shard_count: usize, addresses: &Vec<String>) -> Vec<usize> {
@@ -718,39 +792,42 @@ impl ClientConfig {
         return pools;
     }
 
-    fn merge_by_pools(&self) -> Vec<String> {
+    fn merge_by_pools(&self) -> Result<Vec<String>, Box<dyn std::error::Error>> {
         let mut pool_addresses = Vec::new();
         for _ in 0..self.shard_count {
             pool_addresses.push("".to_owned());
         }
         for i in 0..self.addresses.len() {
-            pool_addresses
-                .get_mut(*self.pools.get(i).unwrap())
-                .unwrap()
-                .push_str(&(self.addresses.get(i).unwrap().to_owned() + " "));
+            get_res_mut(&mut pool_addresses, *get_res(&self.pools, i)?)?
+                .push_str(&(get_res(&self.addresses, i)?.to_owned() + " "));
         }
-        return pool_addresses;
+        return Ok(pool_addresses);
     }
 
-    fn send(&self, address: &String, pool: &usize, global_id: usize, peers: &String) {
+    fn send(
+        &self,
+        address: &String,
+        pool: &usize,
+        global_id: usize,
+        peers: &String,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         info!("{}: sending config to {}", crate::function!(), address);
-        let mut stream = std::net::TcpStream::connect(address)
-            .expect(&format!("{}: connect failed", crate::function!()));
-        stream
-            .write_all(
-                format!("{} {} {}", pool.to_string(), global_id.to_string(), peers).as_bytes(),
-            )
-            .expect(&format!("{}: write_all failed", crate::function!()));
+        let mut stream = std::net::TcpStream::connect(address)?;
+        stream.write_all(
+            format!("{} {} {}", pool.to_string(), global_id.to_string(), peers).as_bytes(),
+        )?;
+        return Ok(());
     }
 
-    fn send_all(&self) {
-        let pool_addresses = self.merge_by_pools();
+    fn send_all(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let pool_addresses = self.merge_by_pools()?;
         for i in 0..self.addresses.len() {
-            let address = self.addresses.get(i).unwrap();
-            let pool = self.pools.get(i).unwrap();
-            let peers = pool_addresses.get(*pool).unwrap();
-            self.send(address, pool, i, &peers);
+            let address = get_res(&self.addresses, i)?;
+            let pool = get_res(&self.pools, i)?;
+            let peers = get_res(&pool_addresses, *pool)?;
+            self.send(address, pool, i, &peers)?;
         }
+        return Ok(());
     }
 }
 
@@ -759,11 +836,14 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn run_statement(&self, statement: &String) -> Result<Table, String> {
+    pub fn run_statement(&self, statement: &String) -> Result<Table, Box<dyn std::error::Error>> {
         return Ok(Table { rows: Vec::new() });
     }
 
-    pub fn connect(shard_count: usize, addresses: &Vec<String>) -> Result<Client, String> {
+    pub fn connect(
+        shard_count: usize,
+        addresses: &Vec<String>,
+    ) -> Result<Client, Box<dyn std::error::Error>> {
         env_logger::init();
         info!("{}: client started", crate::function!());
         let conf = ClientConfig {
@@ -774,10 +854,10 @@ impl Client {
         info!(
             "{}: conf: \n{}",
             crate::function!(),
-            serde_json::to_string_pretty(&conf).unwrap()
+            serde_json::to_string_pretty(&conf)?
         );
-        conf.validate();
-        conf.send_all();
+        conf.validate()?;
+        conf.send_all()?;
         return Ok(Client { conf });
     }
 }
