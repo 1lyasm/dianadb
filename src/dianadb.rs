@@ -94,8 +94,8 @@ impl ServerConfig {
         self.me = format!("S{}", self.global_id.to_string());
         info!(
             "{}: {}: \n{}",
-            crate::function!(),
             self.me,
+            crate::function!(),
             serde_json::to_string_pretty(&self)?
         );
         self.validate()?;
