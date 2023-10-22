@@ -6,7 +6,10 @@ mod util;
 
 extern crate nix;
 
-use std::{io::{Read, Write}, fmt::format};
+use std::{
+    fmt::format,
+    io::{Read, Write},
+};
 
 #[macro_export]
 macro_rules! count {
@@ -56,7 +59,7 @@ struct ServerConfig {
     pool_id: usize,
     peers: Vec<String>,
     global_id: usize,
-    me: String
+    me: String,
 }
 
 impl ServerConfig {
@@ -228,6 +231,7 @@ struct Statement {
     columns: Vec<String>,
     table_name: String,
     predicate: Predicate,
+    me: String,
 }
 
 impl Statement {
@@ -253,20 +257,21 @@ impl Statement {
     }
 
     fn read_ident(
-        start: usize,
+        index: &mut usize,
         statement: &[u8],
         word: &mut String,
+        me: &String
     ) -> Result<(), Box<dyn std::error::Error>> {
+        debug!("{}: {}: starting index: {}", me, crate::function!(), *index);
         let mut is_alnum = true;
-        let mut i = start;
-        while i < statement.len() && is_alnum {
-            let cur = get_res(statement, i)?;
+        while *index < statement.len() && is_alnum {
+            let cur = get_res(statement, *index)?;
             if cur.is_ascii_alphanumeric() {
                 word.push(*cur as char);
             } else {
                 is_alnum = false;
             }
-            i += 1;
+            *index += 1;
         }
         return Ok(());
     }
@@ -276,11 +281,13 @@ impl Statement {
         cur: &u8,
         statement: &[u8],
         word: &mut String,
+        me: &String
     ) -> Result<bool, Box<dyn std::error::Error>> {
+        debug!("{}: {}: called", me, crate::function!());
         let mut is_word = false;
         if cur.is_ascii_alphabetic() {
             is_word = true;
-            Statement::read_ident(*index, statement, word)?;
+            Statement::read_ident(index, statement, word, me)?;
         }
         return Ok(is_word);
     }
@@ -317,6 +324,7 @@ impl Statement {
         cur: &u8,
         statement: &[u8],
         num: &mut String,
+        me: &String
     ) -> Result<bool, Box<dyn std::error::Error>> {
         let mut is_num = false;
         if cur.is_ascii_digit() {
@@ -329,6 +337,7 @@ impl Statement {
     fn select_token(
         index: &mut usize,
         statement: &[u8],
+        me: &String
     ) -> Result<Token, Box<dyn std::error::Error>> {
         let cur = get_res(statement, *index)?;
         let mut val = String::new();
@@ -354,9 +363,9 @@ impl Statement {
             TokenT::Comma
         } else if cur == &b'.' {
             TokenT::Dot
-        } else if Statement::try_read_num(index, cur, statement, &mut val)? {
+        } else if Statement::try_read_num(index, cur, statement, &mut val, me)? {
             TokenT::Num
-        } else if Statement::try_read_ident(index, cur, statement, &mut val)? {
+        } else if Statement::try_read_ident(index, cur, statement, &mut val, me)? {
             TokenT::Ident
         } else {
             TokenT::Error
@@ -365,20 +374,30 @@ impl Statement {
         return Ok(Token { token_t, val });
     }
 
-    fn tokenize(statement_str: &String) -> Result<Vec<Token>, Box<dyn std::error::Error>> {
+    fn tokenize(
+        statement_str: &String,
+        me: &String
+    ) -> Result<Vec<Token>, Box<dyn std::error::Error>> {
+        debug!("{}: {}: called", me, crate::function!());
         let statement_bytes = statement_str.as_bytes();
         let mut tokens: Vec<Token> = vec![];
         let mut i = 0;
         while i < statement_str.len() {
             let mut token;
             loop {
-                token = Statement::select_token(&mut i, statement_bytes)?;
+                token = Statement::select_token(&mut i, statement_bytes, me)?;
                 if token.token_t != TokenT::Whitespace {
                     break;
                 }
             }
             tokens.push(token);
         }
+        debug!(
+            "{}: {}: tokens: {}",
+            me,
+            crate::function!(),
+            serde_json::to_string_pretty(&tokens)?
+        );
         return Ok(tokens);
     }
 
@@ -429,12 +448,19 @@ impl Statement {
         tokens: &Vec<Token>,
         keyword_strings: &Vec<String>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        debug!("{}: {}: called", self.me, crate::function!());
         let mut result = Ok(());
         let mut must_be_ident = true;
         let mut reached_keyword = false;
         while *token_index < tokens.len() && !reached_keyword {
             let token = get_res(tokens, *token_index)?;
             let token_t = &token.token_t;
+            debug!(
+                "{}: {}: token: {}",
+                self.me,
+                crate::function!(),
+                serde_json::to_string(&token)?
+            );
             if must_be_ident {
                 Statement::expect_token_t(token_t, vec![TokenT::Ident])?;
                 if keyword_strings.contains(&token.val) {
@@ -448,6 +474,13 @@ impl Statement {
             must_be_ident = !must_be_ident;
             *token_index += 1;
         }
+        debug!(
+            "{}: {}: columns: {}",
+            self.me,
+            crate::function!(),
+            self.columns.join(" ")
+        );
+        debug!("{}: {}: returning", self.me, crate::function!());
         return result;
     }
 
@@ -619,8 +652,8 @@ impl Statement {
         return Ok(());
     }
 
-    fn parse(statement_str: &String) -> Result<Statement, Box<dyn std::error::Error>> {
-        let tokens: Vec<Token> = Statement::tokenize(&statement_str.to_ascii_lowercase())?;
+    fn parse(statement_str: &String, me: &String) -> Result<Statement, Box<dyn std::error::Error>> {
+        let tokens: Vec<Token> = Statement::tokenize(&statement_str.to_ascii_lowercase(), me)?;
         let mut statement = Statement {
             statement_t: StatementT::Select,
             columns: Vec::new(),
@@ -628,6 +661,7 @@ impl Statement {
             predicate: Predicate {
                 comparisons: Vec::new(),
             },
+            me: me.to_owned(),
         };
         let mut keyword_strings: Vec<String> = Vec::new();
         Statement::init_keyword_strings(&mut keyword_strings)?;
@@ -657,10 +691,13 @@ impl Table {
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
-struct Database {}
+struct Database {
+    me: String,
+}
 
 impl Database {
-    fn init(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn init(&mut self, me: &String) -> Result<(), Box<dyn std::error::Error>> {
+        self.me = me.to_owned();
         return Ok(());
     }
 
@@ -669,7 +706,7 @@ impl Database {
         statement_str: &String,
     ) -> Result<String, Box<dyn std::error::Error>> {
         let mut result = Ok(String::new());
-        let parse_res = Statement::parse(statement_str);
+        let parse_res = Statement::parse(statement_str, &self.me);
         match parse_res {
             Ok(v) => {
                 let resp = String::new();
@@ -691,7 +728,7 @@ pub struct Server {
 impl Server {
     fn init(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.conf.init()?;
-        self.database.init()?;
+        self.database.init(&self.conf.me)?;
         return Ok(());
     }
 
@@ -745,9 +782,9 @@ impl Server {
                 pool_id: 0,
                 peers: Vec::new(),
                 global_id: 0,
-                me: String::new()
+                me: String::new(),
             },
-            database: Database {},
+            database: Database { me: String::new() },
         };
         server.init()?;
         server.listen()?;
@@ -863,5 +900,44 @@ impl Client {
         conf.validate()?;
         conf.send_all()?;
         return Ok(Client { conf });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Statement;
+
+    fn test_tokenize() {
+        let tokens_res =
+            Statement::tokenize(&"select name from table_1".to_string(), &"S0".to_string());
+        match tokens_res {
+            Ok(tokens) => {}
+            Err(ref e) => {
+                assert!(tokens_res.is_ok() == true);
+            }
+        }
+    }
+
+    fn test_parse() {
+        let query = "select name from table_1".to_string();
+        let parse_res = Statement::parse(&query, &"S0".to_string());
+        match parse_res {
+            Ok(v) => {}
+            Err(ref e) => {
+                debug!("{}: parse_res error: {}", crate::function!(), e.to_string());
+                assert!(parse_res.is_ok() == true);
+            }
+        }
+    }
+
+    fn test_statement() {
+        test_tokenize();
+        // test_parse();
+    }
+
+    #[test]
+    fn test() {
+        env_logger::init();
+        test_statement();
     }
 }
