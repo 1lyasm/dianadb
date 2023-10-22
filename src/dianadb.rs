@@ -6,10 +6,7 @@ mod util;
 
 extern crate nix;
 
-use std::{
-    fmt::format,
-    io::{Read, Write},
-};
+use std::io::{Read, Write};
 
 #[macro_export]
 macro_rules! count {
@@ -122,7 +119,7 @@ enum TokenT {
     Error,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize, PartialEq)]
 struct Token {
     token_t: TokenT,
     val: String,
@@ -226,25 +223,94 @@ struct Predicate {
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
-struct Statement {
-    statement_t: StatementT,
-    columns: Vec<String>,
-    table_name: String,
-    predicate: Predicate,
+struct Tokens {
+    token_list: Vec<Token>,
+    stream: Vec<u8>,
     me: String,
 }
 
-impl Statement {
+impl Tokens {
+    fn eq(&self, other: &Tokens) -> Result<bool, Box<dyn std::error::Error>> {
+        let mut is_eq = true;
+        if self.token_list.len() != other.token_list.len() {
+            is_eq = false;
+        }
+        let mut i = 0;
+        while i < self.token_list.len() && is_eq {
+            if get_res(&self.token_list, i)? != get_res(&other.token_list, i)? {
+                is_eq = false;
+            }
+            i += 1;
+        }
+        return Ok(is_eq);
+    }
+
+    fn expect_val(
+        &self,
+        token: &Token,
+        expecting: &String,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut result = Ok(());
+        if &token.val != expecting {
+            result = Err(format!(
+                "{}: {}: expected {} as token value, found: {}",
+                self.me,
+                crate::function!(),
+                expecting,
+                &token.val
+            )
+            .into());
+        }
+        return result;
+    }
+
+    fn expect_keyword(
+        &self,
+        token: &Token,
+        keyword_strings: &Vec<String>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut result = Ok(());
+        if !keyword_strings.contains(&token.val) {
+            result = Err(format!(
+                "{}: {}: expected keyword, found: {}",
+                self.me,
+                crate::function!(),
+                token.val
+            )
+            .into());
+        }
+        return result;
+    }
+
+    fn expect_token_t(
+        &self,
+        token_t: &TokenT,
+        targets: Vec<TokenT>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut result = Ok(());
+        if !targets.contains(&token_t) {
+            result = Err(format!(
+                "{}: {}: expected one of {}, found: {}",
+                self.me,
+                crate::function!(),
+                serde_json::to_string_pretty(&targets)?,
+                serde_json::to_string(&token_t)?
+            )
+            .into());
+        }
+        return result;
+    }
+
     fn next_eq(
+        &self,
         index: &mut usize,
-        statement: &[u8],
         target: &[u8],
     ) -> Result<bool, Box<dyn std::error::Error>> {
         let mut is_eq = true;
         let mut i = 0;
         let mut new_index = *index;
         while i < target.len() && is_eq {
-            if statement[new_index as usize] != target[i as usize] {
+            if self.stream[new_index as usize] != target[i as usize] {
                 is_eq = false;
             }
             i += 1;
@@ -257,140 +323,163 @@ impl Statement {
     }
 
     fn read_ident(
+        &self,
         index: &mut usize,
-        statement: &[u8],
         word: &mut String,
-        me: &String
     ) -> Result<(), Box<dyn std::error::Error>> {
-        debug!("{}: {}: starting index: {}", me, crate::function!(), *index);
+        debug!(
+            "{}: {}: starting index: {}",
+            self.me,
+            crate::function!(),
+            *index
+        );
         let mut is_alnum = true;
-        while *index < statement.len() && is_alnum {
-            let cur = get_res(statement, *index)?;
-            if cur.is_ascii_alphanumeric() {
+        while *index < self.stream.len() && is_alnum {
+            let cur = get_res(&self.stream, *index)?;
+            trace!("{}: {}: cur: {}", self.me, crate::function!(), *cur as char);
+            if cur.is_ascii_alphanumeric() || cur == &('_' as u8) {
                 word.push(*cur as char);
+                *index += 1;
             } else {
                 is_alnum = false;
             }
-            *index += 1;
         }
+        debug!("{}: {}: word: {}", self.me, crate::function!(), word);
         return Ok(());
     }
 
     fn try_read_ident(
+        &self,
         index: &mut usize,
         cur: &u8,
-        statement: &[u8],
         word: &mut String,
-        me: &String
     ) -> Result<bool, Box<dyn std::error::Error>> {
-        debug!("{}: {}: called", me, crate::function!());
+        debug!("{}: {}: called", self.me, crate::function!());
         let mut is_word = false;
         if cur.is_ascii_alphabetic() {
             is_word = true;
-            Statement::read_ident(index, statement, word, me)?;
+            self.read_ident(index, word)?;
         }
         return Ok(is_word);
     }
 
     fn read_num(
-        start: usize,
-        statement: &[u8],
+        &self,
+        index: &mut usize,
         num: &mut String,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        debug!(
+            "{}: {}: starting index: {}",
+            self.me,
+            crate::function!(),
+            *index
+        );
         let mut is_digit = true;
-        let mut i = start;
         let (mut dot_count, mut has_two_dots) = (0, false);
-        while i < statement.len() && is_digit && !has_two_dots {
-            let cur = get_res(statement, i)?;
+        while *index < self.stream.len() && is_digit && !has_two_dots {
+            let cur = get_res(&self.stream, *index)?;
             if cur.is_ascii_digit() {
                 num.push(*cur as char);
+                *index += 1;
             } else if cur == &b'.' {
                 dot_count += 1;
                 if dot_count == 2 {
                     has_two_dots = true;
                 } else {
                     num.push('.');
+                    *index += 1;
                 }
             } else {
                 is_digit = false;
             }
-            i += 1;
         }
+        debug!("{}: {}: num: {}", self.me, crate::function!(), num);
         return Ok(());
     }
 
     fn try_read_num(
+        &self,
         index: &mut usize,
         cur: &u8,
-        statement: &[u8],
         num: &mut String,
-        me: &String
     ) -> Result<bool, Box<dyn std::error::Error>> {
         let mut is_num = false;
         if cur.is_ascii_digit() {
             is_num = true;
-            Statement::read_num(*index, statement, num)?;
+            self.read_num(index, num)?;
         }
         return Ok(is_num);
     }
 
-    fn select_token(
-        index: &mut usize,
-        statement: &[u8],
-        me: &String
-    ) -> Result<Token, Box<dyn std::error::Error>> {
-        let cur = get_res(statement, *index)?;
+    fn select_token(&self, index: &mut usize) -> Result<Token, Box<dyn std::error::Error>> {
+        debug!(
+            "{}: {}: starting index: {}",
+            self.me,
+            crate::function!(),
+            *index
+        );
+        let mut token_t = TokenT::Error;
         let mut val = String::new();
-        let token_t = if cur.is_ascii_whitespace() {
-            TokenT::Whitespace
-        } else if cur == &b'=' {
-            TokenT::Eq
-        } else if cur == &b'>' {
-            if Statement::next_eq(index, statement, b"=")? {
-                TokenT::GreaterEq
+        if *index < self.stream.len() {
+            let cur = get_res(&self.stream, *index)?;
+            debug!("{}: {}: cur: {}", self.me, crate::function!(), *cur as char);
+            val = String::new();
+            token_t = if cur.is_ascii_whitespace() {
+                TokenT::Whitespace
+            } else if cur == &b'=' {
+                TokenT::Eq
+            } else if cur == &b'>' {
+                if self.next_eq(index, b"=")? {
+                    TokenT::GreaterEq
+                } else {
+                    TokenT::Greater
+                }
+            } else if cur == &b'<' {
+                if self.next_eq(index, b">")? {
+                    TokenT::NotEq
+                } else if self.next_eq(index, b"=")? {
+                    TokenT::LessEq
+                } else {
+                    TokenT::Less
+                }
+            } else if cur == &b',' {
+                debug!("{}: {}: selecting comma", self.me, crate::function!());
+                TokenT::Comma
+            } else if cur == &b'.' {
+                TokenT::Dot
+            } else if self.try_read_num(index, cur, &mut val)? {
+                *index -= 1;
+                TokenT::Num
+            } else if self.try_read_ident(index, cur, &mut val)? {
+                *index -= 1;
+                TokenT::Ident
             } else {
-                TokenT::Greater
-            }
-        } else if cur == &b'<' {
-            if Statement::next_eq(index, statement, b">")? {
-                TokenT::NotEq
-            } else if Statement::next_eq(index, statement, b"=")? {
-                TokenT::LessEq
-            } else {
-                TokenT::Less
-            }
-        } else if cur == &b',' {
-            TokenT::Comma
-        } else if cur == &b'.' {
-            TokenT::Dot
-        } else if Statement::try_read_num(index, cur, statement, &mut val, me)? {
-            TokenT::Num
-        } else if Statement::try_read_ident(index, cur, statement, &mut val, me)? {
-            TokenT::Ident
-        } else {
-            TokenT::Error
-        };
-        *index += 1;
+                TokenT::Error
+            };
+            *index += 1;
+        }
         return Ok(Token { token_t, val });
     }
 
-    fn tokenize(
-        statement_str: &String,
-        me: &String
-    ) -> Result<Vec<Token>, Box<dyn std::error::Error>> {
+    fn tokenize(statement_str: &String, me: &String) -> Result<Tokens, Box<dyn std::error::Error>> {
         debug!("{}: {}: called", me, crate::function!());
-        let statement_bytes = statement_str.as_bytes();
-        let mut tokens: Vec<Token> = vec![];
+        let mut tokens = Tokens {
+            token_list: Vec::new(),
+            stream: statement_str.as_bytes().to_vec(),
+            me: me.to_owned(),
+        };
         let mut i = 0;
-        while i < statement_str.len() {
+        while i < tokens.stream.len() {
             let mut token;
             loop {
-                token = Statement::select_token(&mut i, statement_bytes, me)?;
+                token = tokens.select_token(&mut i)?;
                 if token.token_t != TokenT::Whitespace {
                     break;
                 }
             }
-            tokens.push(token);
+            if token.token_t != TokenT::Error {
+                tokens.token_list.push(token);
+            }
         }
         debug!(
             "{}: {}: tokens: {}",
@@ -400,44 +489,51 @@ impl Statement {
         );
         return Ok(tokens);
     }
+}
 
-    fn init_type(
-        &mut self,
-        token_index: &mut usize,
-        tokens: &Vec<Token>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Statement {
+    statement_t: StatementT,
+    columns: Vec<String>,
+    table_name: String,
+    predicate: Predicate,
+    me: String,
+    tokens: Tokens,
+    keywords: Vec<String>,
+}
+
+impl Statement {
+    fn parse_type(&mut self, token_index: &mut usize) -> Result<(), Box<dyn std::error::Error>> {
         let mut result = Ok(());
-        if *token_index < tokens.len() {
-            let first_token = get_res(tokens, *token_index)?;
-            Statement::expect_token_t(&first_token.token_t, vec![TokenT::Ident])?;
+        if *token_index < self.tokens.token_list.len() {
+            let first_token = get_res(&self.tokens.token_list, *token_index)?;
+            self.tokens
+                .expect_token_t(&first_token.token_t, vec![TokenT::Ident])?;
             let val = &first_token.val;
-            self.statement_t =
-                if val == "insert" && get_res(tokens, *token_index + 1)?.val == "into" {
-                    StatementT::Insert
-                } else if val == "select" {
-                    StatementT::Select
-                } else if val == "update" {
-                    StatementT::Update
-                } else {
-                    result = Err(format!(
-                        "{}: did not expect {} as statement type string",
-                        crate::function!(),
-                        val
-                    )
-                    .into());
-                    StatementT::Error
-                };
+            self.statement_t = if val == "insert"
+                && get_res(&self.tokens.token_list, *token_index + 1)?.val == "into"
+            {
+                StatementT::Insert
+            } else if val == "select" {
+                StatementT::Select
+            } else if val == "update" {
+                StatementT::Update
+            } else {
+                result = Err(format!(
+                    "{}: {}: did not expect {} as statement type string",
+                    self.me,
+                    crate::function!(),
+                    val
+                )
+                .into());
+                StatementT::Error
+            };
             *token_index += 1;
         }
         return result;
     }
 
-    fn parse_insert(
-        &mut self,
-        token_index: &mut usize,
-        tokens: &Vec<Token>,
-        keyword_strings: &Vec<String>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn parse_insert(&mut self, token_index: &mut usize) -> Result<(), Box<dyn std::error::Error>> {
         let mut result = Ok(());
         return result;
     }
@@ -445,15 +541,13 @@ impl Statement {
     fn parse_select_columns(
         &mut self,
         token_index: &mut usize,
-        tokens: &Vec<Token>,
-        keyword_strings: &Vec<String>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         debug!("{}: {}: called", self.me, crate::function!());
         let mut result = Ok(());
         let mut must_be_ident = true;
         let mut reached_keyword = false;
-        while *token_index < tokens.len() && !reached_keyword {
-            let token = get_res(tokens, *token_index)?;
+        while *token_index < self.tokens.token_list.len() && !reached_keyword {
+            let token = get_res(&self.tokens.token_list, *token_index)?;
             let token_t = &token.token_t;
             debug!(
                 "{}: {}: token: {}",
@@ -462,14 +556,14 @@ impl Statement {
                 serde_json::to_string(&token)?
             );
             if must_be_ident {
-                Statement::expect_token_t(token_t, vec![TokenT::Ident])?;
-                if keyword_strings.contains(&token.val) {
+                self.tokens.expect_token_t(token_t, vec![TokenT::Ident])?;
+                if self.keywords.contains(&token.val) {
                     reached_keyword = true;
                 } else {
                     self.columns.push(token.val.to_owned());
                 }
             } else {
-                Statement::expect_token_t(token_t, vec![TokenT::Comma])?;
+                self.tokens.expect_token_t(token_t, vec![TokenT::Comma])?;
             }
             must_be_ident = !must_be_ident;
             *token_index += 1;
@@ -484,46 +578,17 @@ impl Statement {
         return result;
     }
 
-    fn expect_val(token: &Token, expecting: &String) -> Result<(), Box<dyn std::error::Error>> {
-        let mut result = Ok(());
-        if &token.val != expecting {
-            result = Err(format!(
-                "{}: expected {} as token value, found: {}",
-                crate::function!(),
-                expecting,
-                &token.val
-            )
-            .into());
-        }
-        return result;
-    }
-
-    fn expect_keyword(
-        token: &Token,
-        keyword_strings: &Vec<String>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut result = Ok(());
-        if !keyword_strings.contains(&token.val) {
-            result = Err(format!(
-                "{}: expected keyword, found: {}",
-                crate::function!(),
-                token.val
-            )
-            .into());
-        }
-        return result;
-    }
-
     fn parse_word(
+        &self,
         token_index: &mut usize,
-        tokens: &Vec<Token>,
         word: &String,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut result = Ok(());
-        if *token_index < tokens.len() {
-            let token = get_res(tokens, *token_index)?;
-            Statement::expect_token_t(&token.token_t, vec![TokenT::Ident])?;
-            Statement::expect_val(token, word)?;
+        if *token_index < self.tokens.token_list.len() {
+            let token = get_res(&self.tokens.token_list, *token_index)?;
+            self.tokens
+                .expect_token_t(&token.token_t, vec![TokenT::Ident])?;
+            self.tokens.expect_val(token, word)?;
             *token_index += 1;
         }
         return result;
@@ -532,35 +597,20 @@ impl Statement {
     fn parse_table_name(
         &mut self,
         token_index: &mut usize,
-        tokens: &Vec<Token>,
-        keyword_strings: &Vec<String>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let result = Ok(());
-        if *token_index < tokens.len() {
-            let token = get_res(tokens, *token_index)?;
-            Statement::expect_token_t(&token.token_t, vec![TokenT::Ident])?;
+        if *token_index < self.tokens.token_list.len() {
+            let token = get_res(&self.tokens.token_list, *token_index)?;
+            self.tokens
+                .expect_token_t(&token.token_t, vec![TokenT::Ident])?;
             self.table_name = token.val.to_owned();
             *token_index += 1;
         }
-        if *token_index < tokens.len() {
-            Statement::expect_keyword(get_res(tokens, *token_index)?, keyword_strings)?;
-        }
-        return result;
-    }
-
-    fn expect_token_t(
-        token_t: &TokenT,
-        targets: Vec<TokenT>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut result = Ok(());
-        if !targets.contains(&token_t) {
-            result = Err(format!(
-                "{}: expected one of {}, found: {}",
-                crate::function!(),
-                serde_json::to_string_pretty(&targets)?,
-                serde_json::to_string(&token_t)?
-            )
-            .into());
+        if *token_index < self.tokens.token_list.len() {
+            self.tokens.expect_keyword(
+                get_res(&self.tokens.token_list, *token_index)?,
+                &self.keywords,
+            )?;
         }
         return result;
     }
@@ -568,21 +618,21 @@ impl Statement {
     fn parse_comparison(
         &mut self,
         token_index: &mut usize,
-        tokens: &Vec<Token>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let result = Ok(());
         let mut cur_token;
         let mut operator = TokenT::Error;
         let mut column_name = String::new();
-        if *token_index < tokens.len() {
-            cur_token = get_res(tokens, *token_index)?;
-            Statement::expect_token_t(&cur_token.token_t, vec![TokenT::Ident])?;
+        if *token_index < self.tokens.token_list.len() {
+            cur_token = get_res(&self.tokens.token_list, *token_index)?;
+            self.tokens
+                .expect_token_t(&cur_token.token_t, vec![TokenT::Ident])?;
             column_name = cur_token.val.to_owned();
             *token_index += 1;
         }
-        if *token_index < tokens.len() {
-            cur_token = get_res(tokens, *token_index)?;
-            Statement::expect_token_t(
+        if *token_index < self.tokens.token_list.len() {
+            cur_token = get_res(&self.tokens.token_list, *token_index)?;
+            self.tokens.expect_token_t(
                 &cur_token.token_t,
                 vec![
                     TokenT::Greater,
@@ -595,9 +645,10 @@ impl Statement {
             operator = cur_token.token_t.to_owned();
             *token_index += 1;
         }
-        if *token_index < tokens.len() {
-            cur_token = get_res(tokens, *token_index)?;
-            Statement::expect_token_t(&cur_token.token_t, vec![TokenT::Num])?;
+        if *token_index < self.tokens.token_list.len() {
+            cur_token = get_res(&self.tokens.token_list, *token_index)?;
+            self.tokens
+                .expect_token_t(&cur_token.token_t, vec![TokenT::Num])?;
             let number = cur_token.val.to_owned();
             self.predicate.comparisons.push(Comparison {
                 column_name,
@@ -612,68 +663,71 @@ impl Statement {
     fn parse_predicate(
         &mut self,
         token_index: &mut usize,
-        tokens: &Vec<Token>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut result = Ok(());
-        self.parse_comparison(token_index, tokens)?;
-        if *token_index < tokens.len() {}
+        self.parse_comparison(token_index)?;
+        if *token_index < self.tokens.token_list.len() {}
         return result;
     }
 
-    fn parse_select(
-        &mut self,
-        token_index: &mut usize,
-        tokens: &Vec<Token>,
-        keyword_strings: &Vec<String>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn parse_select(&mut self, token_index: &mut usize) -> Result<(), Box<dyn std::error::Error>> {
         let result = Ok(());
-        self.parse_select_columns(token_index, tokens, keyword_strings)?;
-        Statement::parse_word(token_index, tokens, &"from".to_string())?;
-        self.parse_table_name(token_index, tokens, keyword_strings)?;
-        Statement::parse_word(token_index, tokens, &"where".to_string())?;
-        self.parse_predicate(token_index, tokens)?;
+        self.parse_select_columns(token_index)?;
+        self.parse_word(token_index, &"from".to_string())?;
+        self.parse_table_name(token_index)?;
+        self.parse_word(token_index, &"where".to_string())?;
+        self.parse_predicate(token_index)?;
         return result;
     }
 
-    fn parse_update(
-        &mut self,
-        token_index: &mut usize,
-        tokens: &Vec<Token>,
-        keyword_strings: &Vec<String>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn parse_update(&mut self, token_index: &mut usize) -> Result<(), Box<dyn std::error::Error>> {
         let mut result = Ok(());
         return result;
     }
 
-    fn init_keyword_strings(strings: &mut Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
+    fn init_keyword_strings(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         for variant in Keyword::iter() {
-            strings.push(serde_json::to_string(&variant)?);
+            self.keywords.push(serde_json::to_string(&variant)?);
         }
         return Ok(());
     }
 
+    fn expect_end(&self, index: usize) -> Result<(), Box<dyn std::error::Error>> {
+        let mut res = Ok(());
+        if index != self.tokens.token_list.len() {
+            res = Err(format!(
+                "{}: {}: expected token index to be equal to length of tokens",
+                self.me,
+                crate::function!()
+            )
+            .into());
+        }
+        return res;
+    }
+
     fn parse(statement_str: &String, me: &String) -> Result<Statement, Box<dyn std::error::Error>> {
-        let tokens: Vec<Token> = Statement::tokenize(&statement_str.to_ascii_lowercase(), me)?;
         let mut statement = Statement {
-            statement_t: StatementT::Select,
+            statement_t: StatementT::Error,
             columns: Vec::new(),
             table_name: String::new(),
             predicate: Predicate {
                 comparisons: Vec::new(),
             },
             me: me.to_owned(),
+            tokens: Tokens::tokenize(&statement_str.to_ascii_lowercase(), me)?,
+            keywords: Vec::new(),
         };
-        let mut keyword_strings: Vec<String> = Vec::new();
-        Statement::init_keyword_strings(&mut keyword_strings)?;
+        statement.init_keyword_strings()?;
         let mut token_index = 0;
-        statement.init_type(&mut token_index, &tokens)?;
+        statement.parse_type(&mut token_index)?;
         if statement.statement_t == StatementT::Insert {
-            statement.parse_insert(&mut token_index, &tokens, &keyword_strings)?;
+            statement.parse_insert(&mut token_index)?;
         } else if statement.statement_t == StatementT::Select {
-            statement.parse_select(&mut token_index, &tokens, &keyword_strings)?;
+            statement.parse_select(&mut token_index)?;
         } else if statement.statement_t == StatementT::Update {
-            statement.parse_update(&mut token_index, &tokens, &keyword_strings)?;
+            statement.parse_update(&mut token_index)?;
         }
+        statement.expect_end(token_index)?;
         return Ok(statement);
     }
 }
@@ -906,16 +960,113 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use crate::Statement;
+    use crate::Token;
+    use crate::TokenT;
+    use crate::Tokens;
 
     fn test_tokenize() {
-        let tokens_res =
-            Statement::tokenize(&"select name from table_1".to_string(), &"S0".to_string());
-        match tokens_res {
-            Ok(tokens) => {}
-            Err(ref e) => {
-                assert!(tokens_res.is_ok() == true);
-            }
+        let mut tokens_res;
+        let mut expected;
+        let mut eq_res;
+
+        tokens_res = Tokens::tokenize(&"select name from table_1".to_string(), &"S0".to_string());
+        assert!(tokens_res.is_ok() == true);
+        expected = Tokens {
+            token_list: vec![
+                Token {
+                    token_t: TokenT::Ident,
+                    val: "select".to_string(),
+                },
+                Token {
+                    token_t: TokenT::Ident,
+                    val: "name".to_string(),
+                },
+                Token {
+                    token_t: TokenT::Ident,
+                    val: "from".to_string(),
+                },
+                Token {
+                    token_t: TokenT::Ident,
+                    val: "table_1".to_string(),
+                },
+            ],
+            me: "S0".to_string(),
+            stream: Vec::new(),
+        };
+        eq_res = tokens_res.as_ref().unwrap().eq(&expected);
+        assert!(eq_res.is_ok() == true);
+        assert!(eq_res.unwrap() == true);
+
+        tokens_res = Tokens::tokenize(
+            &"select column1, column2, column3\nfrom table_name\nwhere column1 > 500\n\n"
+                .to_string(),
+            &"S0".to_string(),
+        );
+        if tokens_res.is_err() {
+            debug!(
+                "{}: tokens_res error: {}",
+                crate::function!(),
+                tokens_res.as_ref().err().unwrap()
+            );
         }
+        assert!(tokens_res.is_ok() == true);
+        expected = Tokens {
+            token_list: vec![
+                Token {
+                    token_t: TokenT::Ident,
+                    val: "select".to_string(),
+                },
+                Token {
+                    token_t: TokenT::Ident,
+                    val: "column1".to_string(),
+                },
+                Token {
+                    token_t: TokenT::Comma,
+                    val: String::new(),
+                },
+                Token {
+                    token_t: TokenT::Ident,
+                    val: "column2".to_string(),
+                },
+                Token {
+                    token_t: TokenT::Comma,
+                    val: String::new(),
+                },
+                Token {
+                    token_t: TokenT::Ident,
+                    val: "column3".to_string(),
+                },
+                Token {
+                    token_t: TokenT::Ident,
+                    val: "from".to_string(),
+                },
+                Token {
+                    token_t: TokenT::Ident,
+                    val: "table_name".to_string(),
+                },
+                Token {
+                    token_t: TokenT::Ident,
+                    val: "where".to_string(),
+                },
+                Token {
+                    token_t: TokenT::Ident,
+                    val: "column1".to_string(),
+                },
+                Token {
+                    token_t: TokenT::Greater,
+                    val: String::new(),
+                },
+                Token {
+                    token_t: TokenT::Num,
+                    val: "500".to_string(),
+                },
+            ],
+            me: "S0".to_string(),
+            stream: Vec::new(),
+        };
+        eq_res = tokens_res.as_ref().unwrap().eq(&expected);
+        assert!(eq_res.is_ok() == true);
+        assert!(eq_res.unwrap() == true);
     }
 
     fn test_parse() {
@@ -930,14 +1081,18 @@ mod tests {
         }
     }
 
-    fn test_statement() {
+    fn test_tokens() {
         test_tokenize();
+    }
+
+    fn test_statement() {
         // test_parse();
     }
 
     #[test]
     fn test() {
         env_logger::init();
+        test_tokens();
         test_statement();
     }
 }
