@@ -6,7 +6,10 @@ mod util;
 
 extern crate nix;
 
-use std::io::{Read, Write};
+use std::{
+    fmt::format,
+    io::{Read, Write},
+};
 
 #[macro_export]
 macro_rules! count {
@@ -130,6 +133,7 @@ enum StatementT {
     Insert,
     Select,
     Update,
+    Create,
     Error,
 }
 
@@ -280,6 +284,25 @@ impl Tokens {
             .into());
         }
         return result;
+    }
+
+    fn expect_not_keyword(
+        &self,
+        token: &Token,
+        keyword_strings: &Vec<String>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let expect_keyword_res = self.expect_keyword(token, keyword_strings);
+        let mut res = Ok(());
+        if expect_keyword_res.is_ok() {
+            res = Err(format!(
+                "{}: {}: did not expect keyword, found: {}",
+                self.me,
+                crate::function!(),
+                token.val
+            )
+            .into());
+        }
+        return res;
     }
 
     fn expect_token_t(
@@ -493,13 +516,14 @@ impl Tokens {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Statement {
+    me: String,
+    tokens: Tokens,
+    keywords: Vec<String>,
+
     statement_t: StatementT,
     columns: Vec<String>,
     table_name: String,
     predicate: Predicate,
-    me: String,
-    tokens: Tokens,
-    keywords: Vec<String>,
 }
 
 impl Statement {
@@ -591,7 +615,7 @@ impl Statement {
         return result;
     }
 
-    fn parse_word(
+    fn skip_word(
         &self,
         token_index: &mut usize,
         word: &String,
@@ -703,12 +727,12 @@ impl Statement {
     }
 
     fn parse_select(&mut self, token_index: &mut usize) -> Result<(), Box<dyn std::error::Error>> {
-        let result = Ok(());
+        let mut result = Ok(());
         self.parse_select_columns(token_index)?;
-        self.parse_word(token_index, &"from".to_string())?;
+        self.skip_word(token_index, &"from".to_string())?;
         self.parse_table_name(token_index)?;
         let before_where_index = *token_index;
-        self.parse_word(token_index, &"where".to_string())?;
+        self.skip_word(token_index, &"where".to_string())?;
         let has_where = *token_index != before_where_index;
         if has_where {
             self.parse_predicate(token_index)?;
@@ -746,6 +770,44 @@ impl Statement {
         return res;
     }
 
+    fn parse_ident(&self, token_index: &mut usize) -> Result<String, Box<dyn std::error::Error>> {
+        let mut res = Ok(String::new());
+        let token = get_res(&self.tokens.token_list, *token_index)?;
+        self.tokens
+            .expect_token_t(&token.token_t, vec![TokenT::Ident])?;
+        // self.tokens.expect_token_t(token_t, targets);
+        return res;
+    }
+
+    fn parse_create(&mut self, token_index: &mut usize) -> Result<(), Box<dyn std::error::Error>> {
+        let mut res = Ok(());
+        self.skip_word(token_index, &"table".to_string())?;
+
+        if *token_index < self.tokens.token_list.len() {
+            let table_name_token = get_res(&self.tokens.token_list, *token_index)?;
+            self.tokens
+                .expect_token_t(&table_name_token.token_t, vec![TokenT::Ident])?;
+            self.tokens
+                .expect_not_keyword(table_name_token, &self.keywords)?;
+            self.table_name = table_name_token.val.to_owned();
+            *token_index += 1;
+        } else {
+            res = Err(format!("{}: {}: table name missing", self.me,
+                              crate::function!()).into());
+        }
+
+        if *token_index < self.tokens.token_list.len() {
+            // TODO parse left paren
+            *token_index += 1;
+        } else {
+            res = Err(format!("{}: {}: schema missing", self.me, crate::function!()).into());
+        }
+
+        // TODO parse schema
+
+        return res;
+    }
+
     fn parse(statement_str: &String, me: &String) -> Result<Statement, Box<dyn std::error::Error>> {
         let mut statement = Statement {
             statement_t: StatementT::Error,
@@ -767,6 +829,8 @@ impl Statement {
             statement.parse_select(&mut token_index)?;
         } else if statement.statement_t == StatementT::Update {
             statement.parse_update(&mut token_index)?;
+        } else if statement.statement_t == StatementT::Create {
+            statement.parse_create(&mut token_index)?;
         }
         statement.expect_end(token_index)?;
         return Ok(statement);
