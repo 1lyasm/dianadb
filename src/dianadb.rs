@@ -546,6 +546,7 @@ impl Statement {
         let mut result = Ok(());
         let mut must_be_ident = true;
         let mut reached_keyword = false;
+        let start_index = *token_index;
         while *token_index < self.tokens.token_list.len() && !reached_keyword {
             let token = get_res(&self.tokens.token_list, *token_index)?;
             let token_t = &token.token_t;
@@ -583,6 +584,10 @@ impl Statement {
             self.columns.join(" ")
         );
         debug!("{}: {}: returning", self.me, crate::function!());
+        if *token_index == start_index {
+            result =
+                Err(format!("{}: {}: column names missing", self.me, crate::function!()).into());
+        }
         return result;
     }
 
@@ -606,7 +611,8 @@ impl Statement {
         &mut self,
         token_index: &mut usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let result = Ok(());
+        let mut result = Ok(());
+        let start_index = *token_index;
         if *token_index < self.tokens.token_list.len() {
             let token = get_res(&self.tokens.token_list, *token_index)?;
             self.tokens
@@ -614,7 +620,10 @@ impl Statement {
             self.table_name = token.val.to_owned();
             *token_index += 1;
         }
-        if *token_index < self.tokens.token_list.len() {
+        if *token_index == start_index {
+            result =
+                Err(format!("{}: {}: table name not found", self.me, crate::function!()).into());
+        } else if *token_index < self.tokens.token_list.len() {
             self.tokens.expect_keyword(
                 get_res(&self.tokens.token_list, *token_index)?,
                 &self.keywords,
@@ -672,9 +681,24 @@ impl Statement {
         &mut self,
         token_index: &mut usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        debug!("{}: {}: called", self.me, crate::function!());
         let mut result = Ok(());
+        let start_index = *token_index;
         // TODO do this for multiple comparisons
         self.parse_comparison(token_index)?;
+        if *token_index == start_index {
+            debug!(
+                "{}: {}: token_index == start_index",
+                self.me,
+                crate::function!()
+            );
+            result = Err(format!(
+                "{}: {}: empty where clause not allowed",
+                self.me,
+                crate::function!()
+            )
+            .into());
+        }
         return result;
     }
 
@@ -683,8 +707,12 @@ impl Statement {
         self.parse_select_columns(token_index)?;
         self.parse_word(token_index, &"from".to_string())?;
         self.parse_table_name(token_index)?;
+        let before_where_index = *token_index;
         self.parse_word(token_index, &"where".to_string())?;
-        self.parse_predicate(token_index)?;
+        let has_where = *token_index != before_where_index;
+        if has_where {
+            self.parse_predicate(token_index)?;
+        }
         return result;
     }
 
@@ -1139,6 +1167,79 @@ mod tests {
                     }]
                 }
         );
+
+        query = "selet name from table_name".to_string();
+        parse_res = Statement::parse(&query, &"S0".to_string());
+        assert!(parse_res.is_err() == true);
+        trace!(
+            "{}: parse_res error: {}",
+            crate::function!(),
+            parse_res.err().unwrap()
+        );
+
+        query = "select name from table_1 something".to_string();
+        parse_res = Statement::parse(&query, &"S0".to_string());
+        assert!(parse_res.is_err() == true);
+        trace!(
+            "{}: parse_err error: {}",
+            crate::function!(),
+            parse_res.err().unwrap()
+        );
+
+        query = "select name from table_1 where name = 400 something".to_string();
+        parse_res = Statement::parse(&query, &"S0".to_string());
+        assert!(parse_res.is_err() == true);
+        trace!(
+            "{}: parse_err error: {}",
+            crate::function!(),
+            parse_res.err().unwrap()
+        );
+
+        query = "select name from table_1 where name = 400 1".to_string();
+        parse_res = Statement::parse(&query, &"S0".to_string());
+        assert!(parse_res.is_err() == true);
+        trace!(
+            "{}: parse_err error: {}",
+            crate::function!(),
+            parse_res.err().unwrap()
+        );
+
+        query = "select from table_1 where name = 400".to_string();
+        parse_res = Statement::parse(&query, &"S0".to_string());
+        assert!(parse_res.is_err() == true);
+        trace!(
+            "{}: parse_err error: {}",
+            crate::function!(),
+            parse_res.err().unwrap()
+        );
+
+        query = "select name from where name = 400".to_string();
+        parse_res = Statement::parse(&query, &"S0".to_string());
+        assert!(parse_res.is_err() == true);
+        trace!(
+            "{}: parse_err error: {}",
+            crate::function!(),
+            parse_res.err().unwrap()
+        );
+
+        query = "select name from table_name where".to_string();
+        parse_res = Statement::parse(&query, &"S0".to_string());
+        assert!(parse_res.is_err() == true);
+        trace!(
+            "{}: parse_err error: {}",
+            crate::function!(),
+            parse_res.err().unwrap()
+        );
+
+        query = "select name form table_name".to_string();
+        parse_res = Statement::parse(&query, &"S0".to_string());
+        assert!(parse_res.is_err() == true);
+        trace!(
+            "{}: parse_err error: {}",
+            crate::function!(),
+            parse_res.err().unwrap()
+        );
+
         return Ok(());
     }
 
