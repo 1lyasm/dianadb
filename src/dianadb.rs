@@ -770,15 +770,6 @@ impl Statement {
         return res;
     }
 
-    fn parse_ident(&self, token_index: &mut usize) -> Result<String, Box<dyn std::error::Error>> {
-        let mut res = Ok(String::new());
-        let token = get_res(&self.tokens.token_list, *token_index)?;
-        self.tokens
-            .expect_token_t(&token.token_t, vec![TokenT::Ident])?;
-        // self.tokens.expect_token_t(token_t, targets);
-        return res;
-    }
-
     fn parse_create(&mut self, token_index: &mut usize) -> Result<(), Box<dyn std::error::Error>> {
         let mut res = Ok(());
         self.skip_word(token_index, &"table".to_string())?;
@@ -893,8 +884,8 @@ impl Server {
 
     fn apply(&mut self, statement_str: &String) -> Result<String, Box<dyn std::error::Error>> {
         let mut result = Ok(String::new());
-        // self.consensus.commit(statement_str);
-        // do not call run_statement immediately, read from log first
+        // TODO commit to logs
+        // TODO read from logs before calling run_statement
         let statement_result = self.database.run_statement(statement_str);
         match statement_result {
             Ok(v) => {
