@@ -555,18 +555,26 @@ impl Statement {
                 crate::function!(),
                 serde_json::to_string(&token)?
             );
-            if must_be_ident {
-                self.tokens.expect_token_t(token_t, vec![TokenT::Ident])?;
-                if self.keywords.contains(&token.val) {
-                    reached_keyword = true;
-                } else {
-                    self.columns.push(token.val.to_owned());
-                }
-            } else {
-                self.tokens.expect_token_t(token_t, vec![TokenT::Comma])?;
+            trace!(
+                "{}: {}: self.keywords: {}",
+                self.me,
+                crate::function!(),
+                serde_json::to_string(&self.keywords)?
+            );
+            if token.token_t == TokenT::Ident && self.keywords.contains(&token.val) {
+                debug!("{}: {}: reached_keyword", self.me, crate::function!());
+                reached_keyword = true;
             }
-            must_be_ident = !must_be_ident;
-            *token_index += 1;
+            if !reached_keyword {
+                if must_be_ident {
+                    self.tokens.expect_token_t(token_t, vec![TokenT::Ident])?;
+                    self.columns.push(token.val.to_owned());
+                } else {
+                    self.tokens.expect_token_t(token_t, vec![TokenT::Comma])?;
+                }
+                must_be_ident = !must_be_ident;
+                *token_index += 1;
+            }
         }
         debug!(
             "{}: {}: columns: {}",
@@ -687,7 +695,12 @@ impl Statement {
 
     fn init_keyword_strings(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         for variant in Keyword::iter() {
-            self.keywords.push(serde_json::to_string(&variant)?);
+            let variant_as_str = serde_json::to_string(&variant)?;
+            self.keywords.push(
+                variant_as_str[1..variant_as_str.len() - 1]
+                    .to_string()
+                    .to_lowercase(),
+            );
         }
         return Ok(());
     }
@@ -964,7 +977,7 @@ mod tests {
     use crate::TokenT;
     use crate::Tokens;
 
-    fn test_tokenize() {
+    fn test_tokenize() -> Result<(), Box<dyn std::error::Error>> {
         let mut tokens_res;
         let mut expected;
         let mut eq_res;
@@ -1067,32 +1080,32 @@ mod tests {
         eq_res = tokens_res.as_ref().unwrap().eq(&expected);
         assert!(eq_res.is_ok() == true);
         assert!(eq_res.unwrap() == true);
+        return Ok(());
     }
 
-    fn test_parse() {
+    fn test_parse() -> Result<(), Box<dyn std::error::Error>> {
         let query = "select name from table_1".to_string();
         let parse_res = Statement::parse(&query, &"S0".to_string());
-        match parse_res {
-            Ok(v) => {}
-            Err(ref e) => {
-                debug!("{}: parse_res error: {}", crate::function!(), e.to_string());
-                assert!(parse_res.is_ok() == true);
-            }
-        }
+        assert!(parse_res.is_ok() == true);
+        let statement = parse_res.unwrap();
+        trace!("{}: statement: {}", crate::function!(), serde_json::to_string(&statement)?);
+        return Ok(());
     }
 
-    fn test_tokens() {
-        test_tokenize();
+    fn test_tokens() -> Result<(), Box<dyn std::error::Error>> {
+        test_tokenize()?;
+        return Ok(());
     }
 
-    fn test_statement() {
-        // test_parse();
+    fn test_statement() -> Result<(), Box<dyn std::error::Error>> {
+        test_parse()?;
+        return Ok(());
     }
 
     #[test]
     fn test() {
         env_logger::init();
-        test_tokens();
-        test_statement();
+        test_tokens().expect("test_tokens failed");
+        test_statement().expect("test_statement failed");
     }
 }
