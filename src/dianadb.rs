@@ -103,7 +103,7 @@ impl ServerConfig {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize, PartialEq, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq, Clone)]
 enum TokenT {
     Eq,
     NotEq,
@@ -210,14 +210,14 @@ iterable_enum! {
 
 impl Keyword {}
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 struct Comparison {
     column_name: String,
     operator: TokenT,
     number: String,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 struct Predicate {
     comparisons: Vec<Comparison>,
 }
@@ -673,8 +673,8 @@ impl Statement {
         token_index: &mut usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut result = Ok(());
+        // TODO do this for multiple comparisons
         self.parse_comparison(token_index)?;
-        if *token_index < self.tokens.token_list.len() {}
         return result;
     }
 
@@ -972,7 +972,10 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
+    use crate::Comparison;
+    use crate::Predicate;
     use crate::Statement;
+    use crate::StatementT;
     use crate::Token;
     use crate::TokenT;
     use crate::Tokens;
@@ -1084,11 +1087,58 @@ mod tests {
     }
 
     fn test_parse() -> Result<(), Box<dyn std::error::Error>> {
-        let query = "select name from table_1".to_string();
-        let parse_res = Statement::parse(&query, &"S0".to_string());
+        let mut query;
+        let mut parse_res;
+        let mut statement;
+
+        query = "select name from table_1".to_string();
+        parse_res = Statement::parse(&query, &"S0".to_string());
         assert!(parse_res.is_ok() == true);
-        let statement = parse_res.unwrap();
-        trace!("{}: statement: {}", crate::function!(), serde_json::to_string(&statement)?);
+        statement = parse_res.unwrap();
+        trace!(
+            "{}: statement: {}",
+            crate::function!(),
+            serde_json::to_string(&statement)?
+        );
+        assert!(statement.statement_t == StatementT::Select);
+        assert!(statement.columns == vec!["name"]);
+        assert!(
+            statement.predicate
+                == Predicate {
+                    comparisons: vec![]
+                }
+        );
+
+        query =
+            "SELECT column_1, COLUMN_2, column_3 FROM my_table where column_1 > 500".to_string();
+        parse_res = Statement::parse(&query, &"S0".to_string());
+        assert!(parse_res.is_ok() == true);
+        statement = parse_res.unwrap();
+        trace!(
+            "{}: statement: {}",
+            crate::function!(),
+            serde_json::to_string(&statement)?
+        );
+        assert!(statement.statement_t == StatementT::Select);
+        assert!(
+            statement.columns
+                == vec![
+                    "column_1".to_string(),
+                    "column_2".to_string(),
+                    "column_3".to_string()
+                ]
+        );
+        assert!(statement.table_name == "my_table".to_string());
+        assert!(
+            statement.predicate
+                == Predicate {
+                    comparisons: vec![Comparison {
+                        column_name: "column_1".to_string(),
+                        operator: TokenT::Greater,
+                        number: "500".to_string()
+                    }]
+                }
+        );
         return Ok(());
     }
 
