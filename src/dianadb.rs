@@ -119,6 +119,8 @@ enum TokenT {
     Num,
     Ident,
     Whitespace,
+    LParen,
+    RParen,
     Error,
 }
 
@@ -484,6 +486,14 @@ impl Tokens {
         return Ok(Token { token_t, val });
     }
 
+    fn token_left(&self, index: usize) -> Result<bool, Box<dyn std::error::Error>> {
+        let mut res = Ok(false);
+        if index < self.token_list.len() {
+            res = Ok(true);
+        }
+        return res;
+    }
+
     fn tokenize(statement_str: &String, me: &String) -> Result<Tokens, Box<dyn std::error::Error>> {
         debug!("{}: {}: called", me, crate::function!());
         let mut tokens = Tokens {
@@ -515,10 +525,39 @@ impl Tokens {
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
+enum SqlT {
+    Integer,
+    Varchar(usize),
+    Char,
+    Date,
+    Error
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+enum ColumnConstraint {
+    NotNull,
+    PrimaryKey,
+    Error
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ColumnInfo {
+    name: String,
+    data_t: SqlT,
+    constraints: Vec<ColumnConstraint>
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Schema {
+    column_info_list: Vec<ColumnInfo>
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
 struct Statement {
     me: String,
     tokens: Tokens,
     keywords: Vec<String>,
+    scheme: Schema,
 
     statement_t: StatementT,
     columns: Vec<String>,
@@ -774,7 +813,8 @@ impl Statement {
         let mut res = Ok(());
         self.skip_word(token_index, &"table".to_string())?;
 
-        if *token_index < self.tokens.token_list.len() {
+        // if *token_index < self.tokens.token_list.len() {
+        if self.tokens.token_left(*token_index)? {
             let table_name_token = get_res(&self.tokens.token_list, *token_index)?;
             self.tokens
                 .expect_token_t(&table_name_token.token_t, vec![TokenT::Ident])?;
@@ -783,15 +823,24 @@ impl Statement {
             self.table_name = table_name_token.val.to_owned();
             *token_index += 1;
         } else {
-            res = Err(format!("{}: {}: table name missing", self.me,
-                              crate::function!()).into());
+            res = Err(format!("{}: {}: table name missing", self.me, crate::function!()).into());
         }
 
-        if *token_index < self.tokens.token_list.len() {
-            // TODO parse left paren
+        // if *token_index < self.tokens.token_list.len() {
+        if self.tokens.token_left(*token_index)? {
+            let left_paren_token = get_res(&self.tokens.token_list, *token_index)?;
+            self.tokens
+                .expect_token_t(&left_paren_token.token_t, vec![TokenT::LParen])?;
             *token_index += 1;
         } else {
             res = Err(format!("{}: {}: schema missing", self.me, crate::function!()).into());
+        }
+
+        if self.tokens.token_left(*token_index)? {
+
+        } else {
+            res = Err(format!("{}: {}: expected something after left paren",
+                              self.me, crate::function!()).into());
         }
 
         // TODO parse schema
