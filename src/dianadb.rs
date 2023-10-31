@@ -530,26 +530,53 @@ enum SqlT {
     Varchar(usize),
     Char,
     Date,
-    Error
+    Error,
+}
+
+impl SqlT {
+    fn from_str(
+        s: &String,
+        char_cnt: usize,
+        me: &String,
+    ) -> Result<SqlT, Box<dyn std::error::Error>> {
+        let res = if s == &"integer".to_string() {
+            Ok(SqlT::Integer)
+        } else if s == &"varchar".to_string() {
+            Ok(SqlT::Varchar(char_cnt))
+        } else if s == &"char".to_string() {
+            Ok(SqlT::Char)
+        } else if s == &"date".to_string() {
+            Ok(SqlT::Date)
+        } else {
+            Err(format!(
+                "{}: {}: can not convert {} to SqlT",
+                me,
+                crate::function!(),
+                s
+            )
+            .into())
+        };
+        return res;
+    }
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
 enum ColumnConstraint {
     NotNull,
     PrimaryKey,
-    Error
+    Error,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct ColumnInfo {
     name: String,
     data_t: SqlT,
-    constraints: Vec<ColumnConstraint>
+    constraints: Vec<ColumnConstraint>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Schema {
-    column_info_list: Vec<ColumnInfo>
+    column_info_list: Vec<ColumnInfo>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -562,7 +589,7 @@ struct Statement {
     columns: Vec<String>,
     table_name: String,
     predicate: Predicate,
-    schema: Schema
+    schema: Schema,
 }
 
 impl Statement {
@@ -809,11 +836,41 @@ impl Statement {
         return res;
     }
 
+    fn parse_column_info(
+        &mut self,
+        token_idx: &mut usize,
+        col_idx: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut res = Ok(());
+        let col_info = get_res_mut(&mut self.schema.column_info_list, col_idx)?;
+
+        if self.tokens.token_left(*token_idx)? {
+            let col_name_token = get_res(&self.tokens.token_list, *token_idx)?;
+            self.tokens
+                .expect_token_t(&col_name_token.token_t, vec![TokenT::Ident])?;
+            self.tokens
+                .expect_not_keyword(col_name_token, &self.keywords)?;
+            col_info.name = col_name_token.val.to_string();
+            *token_idx += 1;
+        }
+
+        if self.tokens.token_left(*token_idx)? {
+            let col_type_tok = get_res(&self.tokens.token_list, *token_idx)?;
+            self.tokens
+                .expect_token_t(&col_type_tok.token_t, vec![TokenT::Ident])?;
+            self.tokens
+                .expect_not_keyword(col_type_tok, &self.keywords)?;
+            col_info.data_t = SqlT::from_str(&col_type_tok.val, 0, &self.me)?;
+            *token_idx += 1;
+        }
+
+        return res;
+    }
+
     fn parse_create(&mut self, token_index: &mut usize) -> Result<(), Box<dyn std::error::Error>> {
         let mut res = Ok(());
         self.skip_word(token_index, &"table".to_string())?;
 
-        // if *token_index < self.tokens.token_list.len() {
         if self.tokens.token_left(*token_index)? {
             let table_name_token = get_res(&self.tokens.token_list, *token_index)?;
             self.tokens
@@ -826,7 +883,6 @@ impl Statement {
             res = Err(format!("{}: {}: table name missing", self.me, crate::function!()).into());
         }
 
-        // if *token_index < self.tokens.token_list.len() {
         if self.tokens.token_left(*token_index)? {
             let left_paren_token = get_res(&self.tokens.token_list, *token_index)?;
             self.tokens
@@ -837,13 +893,17 @@ impl Statement {
         }
 
         if self.tokens.token_left(*token_index)? {
-
+            // TODO do this for all columns
+            let mut col_idx = 0;
+            self.parse_column_info(token_index, col_idx)?;
         } else {
-            res = Err(format!("{}: {}: expected something after left paren",
-                              self.me, crate::function!()).into());
+            res = Err(format!(
+                "{}: {}: expected something after left paren",
+                self.me,
+                crate::function!()
+            )
+            .into());
         }
-
-        // TODO parse schema
 
         return res;
     }
@@ -860,8 +920,10 @@ impl Statement {
             predicate: Predicate {
                 comparisons: Vec::new(),
             },
-            schema: Schema{column_info_list: vec![]}
-       };
+            schema: Schema {
+                column_info_list: vec![],
+            },
+        };
         statement.init_keyword_strings()?;
         let mut token_index = 0;
         statement.parse_type(&mut token_index)?;
