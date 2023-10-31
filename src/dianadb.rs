@@ -557,12 +557,12 @@ struct Statement {
     me: String,
     tokens: Tokens,
     keywords: Vec<String>,
-    scheme: Schema,
 
     statement_t: StatementT,
     columns: Vec<String>,
     table_name: String,
     predicate: Predicate,
+    schema: Schema
 }
 
 impl Statement {
@@ -850,16 +850,18 @@ impl Statement {
 
     fn parse(statement_str: &String, me: &String) -> Result<Statement, Box<dyn std::error::Error>> {
         let mut statement = Statement {
+            me: me.to_owned(),
+            tokens: Tokens::tokenize(&statement_str.to_ascii_lowercase(), me)?,
+            keywords: Vec::new(),
+
             statement_t: StatementT::Error,
             columns: Vec::new(),
             table_name: String::new(),
             predicate: Predicate {
                 comparisons: Vec::new(),
             },
-            me: me.to_owned(),
-            tokens: Tokens::tokenize(&statement_str.to_ascii_lowercase(), me)?,
-            keywords: Vec::new(),
-        };
+            schema: Schema{column_info_list: vec![]}
+       };
         statement.init_keyword_strings()?;
         let mut token_index = 0;
         statement.parse_type(&mut token_index)?;
