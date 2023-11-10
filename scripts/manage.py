@@ -33,7 +33,7 @@ def main():
     ip_id_map = make_ip_id_map(ips)
     group = fabric.ThreadingGroup(*ips,
                                user="ubuntu",
-                               connect_kwargs={"key_filename": "../../../key_pairs/dianadb_kp.pem"})
+                               connect_kwargs={"key_filename": "../../../key_pairs/dianadb.pem"})
     while 1:
         command = input("> ")
         try:
