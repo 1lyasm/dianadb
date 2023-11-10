@@ -1,7 +1,7 @@
 2
-ec2-51-20-75-9.eu-north-1.compute.amazonaws.com
-ec2-16-16-217-211.eu-north-1.compute.amazonaws.com
-ec2-16-170-221-113.eu-north-1.compute.amazonaws.com
-ec2-16-16-64-132.eu-north-1.compute.amazonaws.com
-ec2-51-20-189-15.eu-north-1.compute.amazonaws.com
-ec2-51-20-73-200.eu-north-1.compute.amazonaws.com
+172.31.31.128:6789
+172.31.21.71:6789
+172.31.25.130:6789
+172.31.18.149:6789
+172.31.29.96:6789
+172.31.22.86:6789
