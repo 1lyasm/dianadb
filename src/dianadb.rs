@@ -1117,11 +1117,18 @@ impl ClientConfig {
         global_id: usize,
         peers: &String,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        info!("{}: sending config to {}", crate::function!(), address);
+        let pool_str = pool.to_string();
+        let global_id_str = global_id.to_string();
+        info!(
+            "{}: sending [{}, {}, {}] to {}",
+            crate::function!(),
+            pool_str,
+            global_id_str,
+            peers,
+            address
+        );
         let mut stream = std::net::TcpStream::connect(address)?;
-        stream.write_all(
-            format!("{} {} {}", pool.to_string(), global_id.to_string(), peers).as_bytes(),
-        )?;
+        stream.write_all(format!("{} {} {}", pool_str, global_id_str, peers).as_bytes())?;
         return Ok(());
     }
 
