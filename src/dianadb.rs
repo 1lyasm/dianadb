@@ -56,6 +56,7 @@ fn get_res_mut<T>(iterable: &mut [T], index: usize) -> Result<&mut T, Box<dyn st
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct ServerConfig {
+    addr: String,
     pool_id: usize,
     peers: Vec<String>,
     global_id: usize,
@@ -87,7 +88,7 @@ impl ServerConfig {
     }
 
     fn init(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let (mut stream, _) = std::net::TcpListener::bind("0.0.0.0:6789")?.accept()?;
+        let (mut stream, _) = std::net::TcpListener::bind(self.addr.to_string())?.accept()?;
         let mut payload = String::new();
         stream.read_to_string(&mut payload)?;
         let splitted: Vec<String> = payload.split_whitespace().map(str::to_string).collect();
@@ -1030,18 +1031,19 @@ impl Server {
     }
 
     fn listen(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let listener = std::net::TcpListener::bind("0.0.0.0:6789")?;
+        let listener = std::net::TcpListener::bind(self.conf.addr.to_string())?;
         for stream in listener.incoming() {
             self.handle_connection(&mut stream?)?;
         }
         return Ok(());
     }
 
-    pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+    pub fn run(addr: &String) -> Result<(), Box<dyn std::error::Error>> {
         env_logger::init();
         info!("{}: server started", crate::function!());
         let mut server = Server {
             conf: ServerConfig {
+                addr: addr.to_string(),
                 pool_id: 0,
                 peers: Vec::new(),
                 global_id: 0,

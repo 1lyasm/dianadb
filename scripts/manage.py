@@ -1,46 +1,56 @@
 #!/usr/bin/python3
 
-import fabric
-import invoke
-import sys
+import subprocess
+import select
 
-def make_ip_id_map(ips):
-    ip_id_map = {}
-    for i in range(len(ips)):
-        ip_id_map[ips[i]] = i
-    print(ip_id_map)
-    return ip_id_map
+def start_server(addr):
+    command = ["../target/debug/diserver", addr]
+    return subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-def print_result(result, ip_id_map):
-    print("\n")
-    for key, value in result.items():
-        id = ip_id_map[key.host]
-        print(f"{id}: \n{value.stdout}")
-
-def get_file_name():
-    if len(sys.argv) < 2:
-        sys.exit("main: usage: s for servers c for clients")
-    if sys.argv[1] == "s":
-        return "server_ips.txt"
-    elif sys.argv[1] == "c":
-        return "client_ips.txt"
-    else:
-        sys.exit("main: invalid input")
+def non_blocking_readlines(fd):
+    output = []
+    while True:
+        rlist, _, _ = select.select([fd], [], [], 0.1)
+        if not rlist:
+            break
+        line = fd.readline().decode("utf-8")
+        if not line:
+            break
+        output.append(line)
+    return output
 
 def main():
-    with open(get_file_name(), "r") as file:
-        ips = file.read().split()
-    ip_id_map = make_ip_id_map(ips)
-    group = fabric.ThreadingGroup(*ips,
-                               user="ubuntu",
-                               connect_kwargs={"key_filename": "../../../key_pairs/dianadb.pem"})
-    while 1:
-        command = input("> ")
-        try:
-            result = group.run(command, hide=False)
-            print_result(result, ip_id_map)
-        except fabric.exceptions.GroupException as e:
-            print(f"\nmain: command failed")
+    addr_list = ["127.0.0.1:6789",
+                 "127.0.0.2:6789",
+                 "127.0.0.3:6789",
+                 "127.0.0.4:6789",
+                 "127.0.0.5:6789",
+                 "127.0.0.6:6789"]
+    processes = []
+
+    for addr in addr_list:
+        process = start_server(addr)
+        processes.append(process)
+
+    while processes:
+        for process in processes:
+            retcode = process.poll()
+            if retcode is not None:  # Process has finished
+                print(f"Process {process.pid} exited with code {retcode}")
+                stdout, stderr = process.communicate()
+                print("STDOUT:", stdout.decode("utf-8"))
+                print("STDERR:", stderr.decode("utf-8"))
+                processes.remove(process)
+            else:
+                # Process is still running, print its output if available
+                stdout_lines = non_blocking_readlines(process.stdout)
+                stderr_lines = non_blocking_readlines(process.stderr)
+                if stdout_lines:
+                    print(f"Process {process.pid} STDOUT:")
+                    print("".join(stdout_lines))
+                if stderr_lines:
+                    print(f"Process {process.pid} STDERR:")
+                    print("".join(stderr_lines))
 
 if __name__ == "__main__":
     main()

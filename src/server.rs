@@ -1,6 +1,8 @@
 use dianadb::function;
 
 fn main() {
-    dianadb::Server::run().expect(&format!("{}: run failed", function!()));
+    let args: Vec<String> = std::env::args().collect();
+    let addr = args.get(1).unwrap();
+    dianadb::Server::run(addr).expect(&format!("{}: run failed", function!()));
 }
 
