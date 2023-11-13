@@ -124,7 +124,7 @@ impl ServerConfig {
         );
         self.me = format!("S{}", self.global_id.to_string());
         info!(
-            "{}: {}: \n{}",
+            "{}: {}: \nself: {}",
             self.me,
             crate::function!(),
             serde_json::to_string_pretty(&self)?
