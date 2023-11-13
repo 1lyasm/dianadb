@@ -105,10 +105,23 @@ impl ServerConfig {
             serde_json::to_string(&splitted)?
         );
         self.pool_id = ServerConfig::extract_usize(&splitted, 0)?;
-        trace!("{}: extracted pool_id: {}", crate::function!(), self.pool_id);
+        trace!(
+            "{}: extracted pool_id: {}",
+            crate::function!(),
+            self.pool_id
+        );
         self.global_id = ServerConfig::extract_usize(&splitted, 1)?;
-        trace!("{}: extracted global_id: {}", crate::function!(), self.global_id);
+        trace!(
+            "{}: extracted global_id: {}",
+            crate::function!(),
+            self.global_id
+        );
         self.peers = splitted[2..].to_vec();
+        trace!(
+            "{}: extracted peers: {}",
+            crate::function!(),
+            serde_json::to_string(&self.peers)?
+        );
         self.me = format!("S{}", self.global_id.to_string());
         info!(
             "{}: {}: \n{}",
