@@ -96,8 +96,9 @@ impl ServerConfig {
         let (mut stream, _) = std::net::TcpListener::bind(self.addr.to_string())?.accept()?;
         let mut payload = String::new();
         stream.read_to_string(&mut payload)?;
-        debug!("{}: {}: payload: {}", self.me, crate::function!(), payload);
+        debug!("{}: payload: {}", crate::function!(), payload);
         let splitted: Vec<String> = payload.split_whitespace().map(str::to_string).collect();
+        trace!("{}: hey", crate::function!());
         debug!(
             "{}: splitted: {}",
             crate::function!(),
