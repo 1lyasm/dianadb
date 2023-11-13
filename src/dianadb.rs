@@ -89,8 +89,7 @@ impl ServerConfig {
 
     fn init(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         debug!(
-            "{}: {}: binding to {}",
-            self.me,
+            "{}: binding to {}",
             crate::function!(),
             self.addr.to_string()
         );
@@ -100,13 +99,14 @@ impl ServerConfig {
         debug!("{}: {}: payload: {}", self.me, crate::function!(), payload);
         let splitted: Vec<String> = payload.split_whitespace().map(str::to_string).collect();
         debug!(
-            "{}: {}: splitted: {}",
-            self.me,
+            "{}: splitted: {}",
             crate::function!(),
             serde_json::to_string(&splitted)?
         );
         self.pool_id = ServerConfig::extract_usize(&splitted, 0)?;
+        trace!("{}: extracted pool_id: {}", crate::function!(), self.pool_id);
         self.global_id = ServerConfig::extract_usize(&splitted, 1)?;
+        trace!("{}: extracted global_id: {}", crate::function!(), self.global_id);
         self.peers = splitted[2..].to_vec();
         self.me = format!("S{}", self.global_id.to_string());
         info!(
