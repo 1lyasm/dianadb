@@ -98,7 +98,6 @@ impl ServerConfig {
         stream.read_to_string(&mut payload)?;
         debug!("{}: payload: {}", crate::function!(), payload);
         let splitted: Vec<String> = payload.split_whitespace().map(str::to_string).collect();
-        trace!("{}: hey", crate::function!());
         debug!(
             "{}: splitted: {}",
             crate::function!(),
