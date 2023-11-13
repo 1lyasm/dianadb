@@ -1128,8 +1128,9 @@ impl ClientConfig {
             address
         );
         let mut stream = std::net::TcpStream::connect(address)?;
-        stream.write_all(format!("{} {} {}", pool_str, global_id_str, peers).as_bytes())?;
-        stream.flush()?;
+        let payload = format!("{} {} {}", pool_str, global_id_str, peers);
+        info!("{}: payload: {}", crate::function!(), payload);
+        stream.write_all(payload.as_bytes())?;
         return Ok(());
     }
 
