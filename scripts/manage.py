@@ -16,7 +16,7 @@ def main():
     for addr in addr_list:
         subprocess.run(["../target/debug/diserver", addr, "...", ">", f"S{i}.log", "&"], shell=True)
         i += 1
-    subprocess.run(["wait"], shelll=true)
+    subprocess.run(["wait"], shell=True)
 
 if __name__ == "__main__":
     main()
