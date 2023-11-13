@@ -88,10 +88,23 @@ impl ServerConfig {
     }
 
     fn init(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        debug!(
+            "{}: {}: binding to {}",
+            self.me,
+            crate::function!(),
+            self.addr.to_string()
+        );
         let (mut stream, _) = std::net::TcpListener::bind(self.addr.to_string())?.accept()?;
         let mut payload = String::new();
         stream.read_to_string(&mut payload)?;
+        debug!("{}: {}: payload: {}", self.me, crate::function!(), payload);
         let splitted: Vec<String> = payload.split_whitespace().map(str::to_string).collect();
+        debug!(
+            "{}: {}: splitted: {}",
+            self.me,
+            crate::function!(),
+            serde_json::to_string(&splitted)?
+        );
         self.pool_id = ServerConfig::extract_usize(&splitted, 0)?;
         self.global_id = ServerConfig::extract_usize(&splitted, 1)?;
         self.peers = splitted[2..].to_vec();
