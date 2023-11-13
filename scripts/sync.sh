@@ -3,6 +3,7 @@
 cd ..
 make
 git add -f target/debug/diserver
+git add src/dianadb.rs
 git commit -m "Update binary"
 git push
 
