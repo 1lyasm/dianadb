@@ -14,7 +14,9 @@ def main():
             ]
     i = 0
     for addr in addr_list:
-        subprocess.run(["../target/debug/diserver", addr, "...", ">", f"S{i}.log", "&"], shell=True)
+        cmd_str = f"../target/debug/diserver {addr} ... > S{i}.log &"
+        # print(f"cmd_str: {cmd_str}")
+        subprocess.run(cmd_str, shell=True)
         i += 1
     subprocess.run(["wait"], shell=True)
 
