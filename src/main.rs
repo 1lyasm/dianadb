@@ -39,18 +39,6 @@ fn get_res<T>(iterable: &[T], index: usize) -> Result<&T, Box<dyn std::error::Er
     return result;
 }
 
-fn get_res_mut<T>(iterable: &mut [T], index: usize) -> Result<&mut T, Box<dyn std::error::Error>> {
-    let result;
-    let opt = iterable.get_mut(index);
-    if opt.is_some() {
-        result = Ok(opt.unwrap());
-    } else {
-        result = Err("index out of bounds".into());
-    }
-    return result;
-}
-
-
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq, Clone)]
 enum TokenT {
     Eq,
@@ -188,7 +176,7 @@ impl Tokens {
         let mut result = Ok(());
         if &tok.val != expecting {
             result = Err(format!(
-                "{}: expected {} as tok value, found: {}",
+                "{}: expected '{}' as tok value, found: '{}'",
                 crate::function!(),
                 expecting,
                 &tok.val
@@ -748,52 +736,92 @@ impl Statement {
         return res;
     }
 
-    fn parse_column_info(
+    fn parse_schema(
         &mut self,
         tok_idx: &mut usize,
-        col_idx: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let res = Ok(());
-        let col_info = get_res_mut(&mut self.schema.column_info_list, col_idx)?;
+        let mut res = Ok(());
+        let mut saw_primary = false;
 
-        println!("after accessing column_info_list");
-
-        if self.toks.tok_left(*tok_idx)? {
-            let col_name_tok = get_res(&self.toks.tok_list, *tok_idx)?;
-            self.toks
-                .expect_tok_t(&col_name_tok.tok_t, vec![TokenT::Ident])?;
-            self.toks
-                .expect_not_keyword(col_name_tok, &self.keywords)?;
-            col_info.name = col_name_tok.val.to_string();
-            *tok_idx += 1;
-        }
-
-        if self.toks.tok_left(*tok_idx)? {
-            let col_type_tok = get_res(&self.toks.tok_list, *tok_idx)?;
-            self.toks
-                .expect_tok_t(&col_type_tok.tok_t, vec![TokenT::Ident])?;
-            if col_type_tok.val != "varchar" {
-                col_info.data_t = SqlT::from_str(&col_type_tok.val, 0)?;
-            } else {
+        loop {
+        let mut col_info = ColumnInfo{name: String::new(),
+            data_t: SqlT::Error, constraints: vec![]};
+            if self.toks.tok_left(*tok_idx)? {
+                let col_name_tok = get_res(&self.toks.tok_list, *tok_idx)?;
+                self.toks
+                    .expect_tok_t(&col_name_tok.tok_t, vec![TokenT::Ident])?;
+                self.toks
+                    .expect_not_keyword(col_name_tok, &self.keywords)?;
+                col_info.name = col_name_tok.val.to_string();
                 *tok_idx += 1;
-                if self.toks.tok_left(*tok_idx)? {
-                    let lparen_tok = get_res(&self.toks.tok_list, *tok_idx)?;
-                    self.toks.expect_tok_t(&lparen_tok.tok_t, vec![TokenT::LParen])?;
+            }
+
+            if self.toks.tok_left(*tok_idx)? {
+                let col_type_tok = get_res(&self.toks.tok_list, *tok_idx)?;
+                self.toks
+                    .expect_tok_t(&col_type_tok.tok_t, vec![TokenT::Ident])?;
+                if col_type_tok.val != "varchar" {
+                    col_info.data_t = SqlT::from_str(&col_type_tok.val, 0)?;
+                } else {
+                    *tok_idx += 1;
+                    if self.toks.tok_left(*tok_idx)? {
+                        let lparen_tok = get_res(&self.toks.tok_list, *tok_idx)?;
+                        self.toks.expect_tok_t(&lparen_tok.tok_t, vec![TokenT::LParen])?;
+                    }
+                    *tok_idx += 1;
+                    if self.toks.tok_left(*tok_idx)? {
+                        let int_tok = get_res(&self.toks.tok_list, *tok_idx)?;
+                        self.toks.expect_tok_t(&int_tok.tok_t, vec![TokenT::Num])?;
+                        let n_char = int_tok.val.parse::<usize>().unwrap();
+                        col_info.data_t = SqlT::from_str(&col_type_tok.val, n_char)?;
+                    }
+                    *tok_idx += 1;
+                    if self.toks.tok_left(*tok_idx)? {
+                        let rparen = get_res(&self.toks.tok_list, *tok_idx)?;
+                        self.toks.expect_tok_t(&rparen.tok_t, vec![TokenT::RParen])?;
+                    }
                 }
                 *tok_idx += 1;
-                if self.toks.tok_left(*tok_idx)? {
-                    let int_tok = get_res(&self.toks.tok_list, *tok_idx)?;
-                    self.toks.expect_tok_t(&int_tok.tok_t, vec![TokenT::Num])?;
-                    let n_char = int_tok.val.parse::<usize>().unwrap();
-                    col_info.data_t = SqlT::from_str(&col_type_tok.val, n_char)?;
-                }
-                *tok_idx += 1;
-                if self.toks.tok_left(*tok_idx)? {
-                    let rparen = get_res(&self.toks.tok_list, *tok_idx)?;
-                    self.toks.expect_tok_t(&rparen.tok_t, vec![TokenT::RParen])?;
+            }
+            let old_tok_idx = *tok_idx;
+            if self.toks.tok_left(*tok_idx)? {
+                let primary_tok = get_res(&self.toks.tok_list, *tok_idx)?;
+                if primary_tok.tok_t == TokenT::Ident && primary_tok.val == "primary" {
+                    *tok_idx += 1;
+                    if self.toks.tok_left(*tok_idx)? {
+                        let key_tok = get_res(&self.toks.tok_list, *tok_idx)?;
+                        if key_tok.tok_t == TokenT::Ident && key_tok.val == "key" {
+                            if saw_primary != true {
+                                *tok_idx += 1;
+                                saw_primary = true;
+                                col_info.constraints.push(ColumnConstraint::PrimaryKey);
+                            } else {
+                                res = Err(format!("{}: multiple 'primary key's", crate::function!()).into());
+                            }
+                        } else {
+                            res = Err(format!("{}: expected 'key' after 'primary'", crate::function!()).into());
+                        }
+                    }
                 }
             }
-            *tok_idx += 1;
+            if res.is_err() {
+                break;
+            }
+            if saw_primary == false {
+                *tok_idx = old_tok_idx;
+            }
+            self.schema.column_info_list.push(col_info);
+            if self.toks.tok_left(*tok_idx)? {
+                let comma = get_res(&self.toks.tok_list, *tok_idx)?;
+                if comma.tok_t != TokenT::RParen {
+                    self.toks.expect_tok_t(&comma.tok_t, vec![TokenT::Comma])?;
+                } else {
+                    *tok_idx += 1;
+                    break;
+                }
+
+                *tok_idx += 1;
+            }
         }
 
         return res;
@@ -828,11 +856,7 @@ impl Statement {
         }
 
         if self.toks.tok_left(*tok_index)? {
-            let col_idx = 0;
-            self.schema.column_info_list.push(ColumnInfo{constraints: vec![],
-                data_t: SqlT::Error, name: String::new()
-            });
-            self.parse_column_info(tok_index, col_idx)?;
+            self.parse_schema(tok_index)?;
             println!("after parse_column_info");
         } else if res.is_ok() {
             res = Err(format!(
@@ -841,17 +865,6 @@ impl Statement {
             )
             .into());
         }
-
-        if self.toks.tok_left(*tok_index)? {
-            let right_paren_tok = get_res(&self.toks.tok_list, *tok_index)?;
-            self.toks
-                .expect_tok_t(&right_paren_tok.tok_t, vec![TokenT::RParen])?;
-            *tok_index += 1;
-        } else if res.is_ok() {
-            res = Err(format!("{}: ')' is missing", crate::function!()).into());
-        }
-
-
 
         return res;
     }
@@ -910,7 +923,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let stdin = std::io::stdin();
         stdin.lock().read_line(&mut line).unwrap();
 
-        if line == "q" {
+        if line == "q\n" {
             break;
         }
 
