@@ -535,6 +535,9 @@ impl Statement {
                 *tok_index += 1;
             }
         }
+        if reached_keyword == true && must_be_ident == true {
+            result = Err(format!("{}: expected identifier", crate::function!()).into());
+        }
         if *tok_index == start_index {
             result =
                 Err(format!("{}: column names missing", crate::function!()).into());
@@ -691,7 +694,7 @@ impl Statement {
         let mut res = Ok(());
         if index != self.toks.tok_list.len() {
             res = Err(format!(
-                "{}: unexpected extra tokens",
+                "{}: expected end of input",
                 crate::function!()
             )
             .into());
