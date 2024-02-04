@@ -212,7 +212,7 @@ impl Tokens {
         let mut res = Ok(());
         if expect_keyword_res.is_ok() {
             res = Err(format!(
-                "{}: did not expect keyword, found: {}",
+                "{}: did not expect keyword, found: '{}'",
                 crate::function!(),
                 tok.val
             )
@@ -524,7 +524,7 @@ impl Statement {
                 StatementT::Create
             }  else {
                 result = Err(format!(
-                    "{}: did not expect {} as statement type string",
+                    "{}: did not expect '{}' as statement type string",
                     crate::function!(),
                     val
                 )
@@ -547,7 +547,7 @@ impl Statement {
         let mut must_be_ident = true;
         let mut reached_keyword = false;
         let start_index = *tok_index;
-        while *tok_index < self.toks.tok_list.len() && !reached_keyword {
+        while self.toks.tok_left(*tok_index)? == true && reached_keyword == false {
             let tok = get_res(&self.toks.tok_list, *tok_index)?;
             let tok_t = &tok.tok_t;
             debug!(
@@ -614,6 +614,7 @@ impl Statement {
         let start_index = *tok_index;
         if *tok_index < self.toks.tok_list.len() {
             let tok = get_res(&self.toks.tok_list, *tok_index)?;
+            self.toks.expect_not_keyword(&tok, &self.keywords)?;
             self.toks
                 .expect_tok_t(&tok.tok_t, vec![TokenT::Ident])?;
             self.table_name = tok.val.to_owned();
@@ -635,15 +636,18 @@ impl Statement {
         &mut self,
         tok_index: &mut usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let result = Ok(());
+        let mut result = Ok(());
         let mut cur_tok;
         let mut operator = TokenT::Error;
         let mut column_name = String::new();
+        let mut has_comp = false;
+        let mut is_err = false;
         if *tok_index < self.toks.tok_list.len() {
             cur_tok = get_res(&self.toks.tok_list, *tok_index)?;
             self.toks
                 .expect_tok_t(&cur_tok.tok_t, vec![TokenT::Ident])?;
             column_name = cur_tok.val.to_owned();
+            has_comp = true;
             *tok_index += 1;
         }
         if *tok_index < self.toks.tok_list.len() {
@@ -660,6 +664,8 @@ impl Statement {
             )?;
             operator = cur_tok.tok_t.to_owned();
             *tok_index += 1;
+        } else if has_comp == true {
+            is_err = true;
         }
         if *tok_index < self.toks.tok_list.len() {
             cur_tok = get_res(&self.toks.tok_list, *tok_index)?;
@@ -672,6 +678,11 @@ impl Statement {
                 number,
             });
             *tok_index += 1;
+        } else if has_comp == true {
+            is_err = true;
+        }
+        if is_err == true {
+            result = Err(format!("{}: unexpected extra tokens", crate::function!()).into());
         }
         return result;
     }
