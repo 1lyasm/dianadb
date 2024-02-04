@@ -699,17 +699,20 @@ impl Statement {
     }
 
     fn parse_select(&mut self, tok_index: &mut usize) -> Result<(), Box<dyn std::error::Error>> {
-        let result = Ok(());
+        let mut res = Ok(());
         self.parse_select_columns(tok_index)?;
         self.skip_word(tok_index, &"from".to_string())?;
         self.parse_table_name(tok_index)?;
-        let before_where_index = *tok_index;
-        self.skip_word(tok_index, &"where".to_string())?;
-        let has_where = *tok_index != before_where_index;
-        if has_where {
-            self.parse_predicate(tok_index)?;
+        if self.toks.tok_left(*tok_index)? {
+            let where_tok = get_res(&self.toks.tok_list, *tok_index)?;
+            if where_tok.tok_t == TokenT::Ident && where_tok.val == "where" {
+                *tok_index += 1;
+                self.parse_predicate(tok_index)?;
+            } else {
+                res = Err(format!("{}: unexpected tokens", crate::function!()).into());
+            }
         }
-        return result;
+        return res;
     }
 
     fn init_keyword_strings(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -728,7 +731,7 @@ impl Statement {
         let mut res = Ok(());
         if index != self.toks.tok_list.len() {
             res = Err(format!(
-                "{}: expected tok index to be equal to length of toks",
+                "{}: expected end of input",
                 crate::function!()
             )
             .into());
