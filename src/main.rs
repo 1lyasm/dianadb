@@ -432,7 +432,6 @@ impl Tokens {
             crate::function!(),
             serde_json::to_string_pretty(&toks)?
         );
-        println!("{}", serde_json::to_string_pretty(&toks)?);
         return Ok(toks);
     }
 }
@@ -863,8 +862,6 @@ impl Statement {
             res = Err(format!("{}: table name is missing", crate::function!()).into());
         }
 
-        println!("tok_index: {}", *tok_index);
-        println!("tok count: {}", self.toks.tok_list.len());
         if self.toks.tok_left(*tok_index)? {
             let left_paren_tok = get_res(&self.toks.tok_list, *tok_index)?;
             self.toks
@@ -876,7 +873,6 @@ impl Statement {
 
         if self.toks.tok_left(*tok_index)? {
             self.parse_schema(tok_index)?;
-            println!("after parse_column_info");
         } else if res.is_ok() {
             res = Err(format!(
                 "{}: expected something after left paren",
