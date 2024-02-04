@@ -1,22 +1,13 @@
 [package]
-name = "dianadb"
+name = "sql_parser"
 version = "0.1.0"
 edition = "2021"
-
-[lib]
-name = "dianadb"
-path = "src/dianadb.rs"
-
-[[bin]]
-name = "diserver"
-path = "src/server.rs"
 
 [profile.release]
 strip = "symbols"
 
 [dependencies]
 log = "0.4.20"
-nix = { version = "0.27.1", features = ["socket"] }
 serde_json = "1.0.107"
 
 [dependencies.serde]
