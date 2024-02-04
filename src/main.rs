@@ -691,7 +691,7 @@ impl Statement {
         let mut res = Ok(());
         if index != self.toks.tok_list.len() {
             res = Err(format!(
-                "{}: expected end of input",
+                "{}: unexpected extra tokens",
                 crate::function!()
             )
             .into());
