@@ -744,8 +744,8 @@ impl Statement {
         let mut saw_primary = false;
 
         loop {
-        let mut col_info = ColumnInfo{name: String::new(),
-            data_t: SqlT::Error, constraints: vec![]};
+            let mut col_info = ColumnInfo{name: String::new(),
+                data_t: SqlT::Error, constraints: vec![]};
             if self.toks.tok_left(*tok_idx)? {
                 let col_name_tok = get_res(&self.toks.tok_list, *tok_idx)?;
                 self.toks
@@ -821,6 +821,11 @@ impl Statement {
                 }
 
                 *tok_idx += 1;
+            }
+
+            if self.toks.tok_left(*tok_idx)? == false {
+                res = Err(format!("{}: unexpected end of input", crate::function!()).into());
+                break;
             }
         }
 
