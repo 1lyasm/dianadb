@@ -265,15 +265,9 @@ impl Tokens {
         index: &mut usize,
         word: &mut String,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        debug!(
-            "{}: starting index: {}",
-            crate::function!(),
-            *index
-        );
         let mut is_alnum = true;
         while *index < self.stream.len() && is_alnum {
             let cur = get_res(&self.stream, *index)?;
-            trace!("{}: cur: {}", crate::function!(), *cur as char);
             if cur.is_ascii_alphanumeric() || cur == &('_' as u8) {
                 word.push(*cur as char);
                 *index += 1;
@@ -281,7 +275,6 @@ impl Tokens {
                 is_alnum = false;
             }
         }
-        debug!("{}: word: {}", crate::function!(), word);
         return Ok(());
     }
 
@@ -291,7 +284,6 @@ impl Tokens {
         cur: &u8,
         word: &mut String,
     ) -> Result<bool, Box<dyn std::error::Error>> {
-        debug!("{}: called", crate::function!());
         let mut is_word = false;
         if cur.is_ascii_alphabetic() {
             is_word = true;
@@ -305,11 +297,6 @@ impl Tokens {
         index: &mut usize,
         num: &mut String,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        debug!(
-            "{}: starting index: {}",
-            crate::function!(),
-            *index
-        );
         let mut is_digit = true;
         let (mut dot_count, mut has_two_dots) = (0, false);
         while *index < self.stream.len() && is_digit && !has_two_dots {
@@ -329,7 +316,6 @@ impl Tokens {
                 is_digit = false;
             }
         }
-        debug!("{}: num: {}", crate::function!(), num);
         return Ok(());
     }
 
@@ -348,16 +334,10 @@ impl Tokens {
     }
 
     fn select_tok(&self, index: &mut usize) -> Result<Token, Box<dyn std::error::Error>> {
-        debug!(
-            "{}: starting index: {}",
-            crate::function!(),
-            *index
-        );
         let mut tok_t = TokenT::Error;
         let mut val = String::new();
         if *index < self.stream.len() {
             let cur = get_res(&self.stream, *index)?;
-            debug!("{}: cur: {}", crate::function!(), *cur as char);
             val = String::new();
             tok_t = if cur.is_ascii_whitespace() {
                 TokenT::Whitespace
@@ -378,7 +358,6 @@ impl Tokens {
                     TokenT::Less
                 }
             } else if cur == &b',' {
-                debug!("{}: selecting comma", crate::function!());
                 TokenT::Comma
             } else if cur == &b'.' {
                 TokenT::Dot
@@ -408,8 +387,7 @@ impl Tokens {
         return res;
     }
 
-    fn tokize(statement_str: &String) -> Result<Tokens, Box<dyn std::error::Error>> {
-        debug!("{}: called", crate::function!());
+    fn tokenize(statement_str: &String) -> Result<Tokens, Box<dyn std::error::Error>> {
         let mut toks = Tokens {
             tok_list: Vec::new(),
             stream: statement_str.as_bytes().to_vec(),
@@ -427,11 +405,6 @@ impl Tokens {
                 toks.tok_list.push(tok);
             }
         }
-        debug!(
-            "{}: toks: {}",
-            crate::function!(),
-            serde_json::to_string_pretty(&toks)?
-        );
         return Ok(toks);
     }
 }
@@ -541,7 +514,6 @@ impl Statement {
         &mut self,
         tok_index: &mut usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        debug!("{}: called", crate::function!());
         let mut result = Ok(());
         let mut must_be_ident = true;
         let mut reached_keyword = false;
@@ -549,18 +521,7 @@ impl Statement {
         while self.toks.tok_left(*tok_index)? == true && reached_keyword == false {
             let tok = get_res(&self.toks.tok_list, *tok_index)?;
             let tok_t = &tok.tok_t;
-            debug!(
-                "{}: tok: {}",
-                crate::function!(),
-                serde_json::to_string(&tok)?
-            );
-            trace!(
-                "{}: self.keywords: {}",
-                crate::function!(),
-                serde_json::to_string(&self.keywords)?
-            );
             if tok.tok_t == TokenT::Ident && self.keywords.contains(&tok.val) {
-                debug!("{}: reached_keyword", crate::function!());
                 reached_keyword = true;
             }
             if !reached_keyword {
@@ -574,12 +535,6 @@ impl Statement {
                 *tok_index += 1;
             }
         }
-        debug!(
-            "{}: columns: {}",
-            crate::function!(),
-            self.columns.join(" ")
-        );
-        debug!("{}: returning", crate::function!());
         if *tok_index == start_index {
             result =
                 Err(format!("{}: column names missing", crate::function!()).into());
@@ -690,15 +645,10 @@ impl Statement {
         &mut self,
         tok_index: &mut usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        debug!("{}: called", crate::function!());
         let mut result = Ok(());
         let start_index = *tok_index;
         self.parse_comparison(tok_index)?;
         if *tok_index == start_index {
-            debug!(
-                "{}: tok_index == start_index",
-                crate::function!()
-            );
             result = Err(format!(
                 "{}: empty where clause not allowed",
                 crate::function!()
@@ -886,7 +836,7 @@ impl Statement {
 
     fn parse(statement_str: &String) -> Result<Statement, Box<dyn std::error::Error>> {
         let mut statement = Statement {
-            toks: Tokens::tokize(&statement_str.to_ascii_lowercase())?,
+            toks: Tokens::tokenize(&statement_str.to_ascii_lowercase())?,
             keywords: Vec::new(),
 
             statement_t: StatementT::Error,
@@ -982,12 +932,12 @@ mod tests {
     }
     }
 
-    fn test_tokize() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_tokenize() -> Result<(), Box<dyn std::error::Error>> {
         let mut toks_res;
         let mut expected;
         let mut eq_res;
 
-        toks_res = Tokens::tokize(&"select name from table_1".to_string());
+        toks_res = Tokens::tokenize(&"select name from table_1".to_string());
         assert!(toks_res.is_ok() == true);
         expected = Tokens {
             tok_list: vec![
@@ -1014,7 +964,7 @@ mod tests {
         assert!(eq_res.is_ok() == true);
         assert!(eq_res.unwrap() == true);
 
-        toks_res = Tokens::tokize(
+        toks_res = Tokens::tokenize(
             &"select column1, column2, column3\nfrom table_name\nwhere column1 > 500\n\n"
                 .to_string()
         );
@@ -1215,7 +1165,7 @@ mod tests {
     }
 
     fn test_toks() -> Result<(), Box<dyn std::error::Error>> {
-        test_tokize()?;
+        test_tokenize()?;
         return Ok(());
     }
 
